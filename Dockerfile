@@ -1,8 +1,8 @@
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 WORKDIR /src
-COPY PhoneOrchestrator.csproj ./
+COPY src/PhoneOrchestrator.csproj ./
 RUN dotnet restore
-COPY . .
+COPY src/ ./
 RUN dotnet publish -c Release -o /app --no-restore
 
 FROM mcr.microsoft.com/dotnet/aspnet:8.0
