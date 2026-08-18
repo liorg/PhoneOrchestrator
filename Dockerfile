@@ -1,3 +1,4 @@
+# Build context is the repo root; the project lives in src/.
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 WORKDIR /src
 COPY src/PhoneOrchestrator.csproj ./

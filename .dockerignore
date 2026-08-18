@@ -1,0 +1,5 @@
+src/bin/
+src/obj/
+.git/
+.env
+deploy.env

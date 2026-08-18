@@ -1,24 +1,17 @@
 # Swarm stack for PhoneOrchestrator.
 #
-#   docker stack deploy -c docker-compose.yml orchestrator
-#
 # Singleton by design: replicas = 1. When the node holding it dies, Swarm
-# reschedules the task onto another node in the cluster, which is the
-# failover requirement. Ports come from the routing mesh, so the dashboard
-# stays reachable on the same address wherever the task lands.
+# reschedules the task onto another node, which is the failover requirement.
+# Ports come from the routing mesh, so the dashboard stays reachable on the
+# same address wherever the task lands.
 #
-# Image tags are timestamped on purpose - Swarm will not re-pull :latest.
+# Deploy with ./deploy.sh - it sources .env, builds a timestamped tag and
+# exports IMAGE. Do not run `docker stack deploy` directly: IMAGE would be
+# unset and the deploy fails on an invalid reference.
 #
-#   source deploy.env                     # REGISTRY / IMAGE_NAME / SUPABASE_URL
-#   export IMAGE_TAG=$(date +%Y%m%d-%H%M%S)
-#   docker build -t $REGISTRY/$IMAGE_NAME:$IMAGE_TAG .
-#   docker push  $REGISTRY/$IMAGE_NAME:$IMAGE_TAG
-#   docker stack deploy -c docker-compose.yml orchestrator
-#
-# No defaults on the image line, on purpose. A REGISTRY fallback would bake a
+# No default on the image line, on purpose. A registry fallback would bake a
 # node address into the stack, and a :latest fallback would silently deploy a
-# stale image because Swarm does not re-pull a tag it already resolved.
-# An unset variable fails the deploy instead - use deploy.sh.
+# stale image, because Swarm does not re-pull a tag it already resolved.
 
 version: "3.8"
 
@@ -30,9 +23,10 @@ services:
       ASPNETCORE_URLS: http://+:8080
       # Double underscore maps onto the "Orchestrator" config section.
       Orchestrator__SupabaseUrl:         ${SUPABASE_URL}
-      # Comes from .env via deploy.sh. Visible in `docker service inspect` -
-      # if that matters, blank this line and use the supabase_key secret
-      # instead (Program.cs prefers the secret file when it exists).
+      # Comes from .env via deploy.sh, so it is visible in
+      # `docker service inspect`. If that matters, blank this line and create
+      # a swarm secret named supabase_key instead - Program.cs prefers the
+      # secret file whenever /run/secrets/supabase_key exists.
       Orchestrator__SupabaseKey:         ${SUPABASE_KEY}
       Orchestrator__HostAgentPort:       "5000"
       Orchestrator__StaleAfterSeconds:   "90"
@@ -40,9 +34,9 @@ services:
       Orchestrator__FailuresBeforeDrain: "3"
       # Observe-only window after start. Must outlast the slowest HostAgent boot.
       Orchestrator__StartupGraceSeconds: "180"
-      # Leave empty to take the value from bot_config['orchestrator.env'].
+      # Empty means take the value from bot_config['orchestrator.env'].
       Orchestrator__Env:                 ""
-      # Ship observing. Flip to "true" once the dashboard looks right.
+      # Ships observing. Flip to "true" once the dashboard looks right.
       Orchestrator__AutoDrain:           "false"
 
     ports:
@@ -56,7 +50,7 @@ services:
 
     deploy:
       replicas: 1
-      # Uncomment only if you have more than one manager - a single-manager
+      # Uncomment only with more than one manager - a single-manager
       # constraint would defeat the failover this service exists for.
       # placement:
       #   constraints: [node.role == manager]
@@ -65,7 +59,7 @@ services:
         delay: 5s
         max_attempts: 0
       update_config:
-        order: stop-first     # singleton: never run two at once
+        order: stop-first
         failure_action: rollback
         delay: 10s
       resources:
