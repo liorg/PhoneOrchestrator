@@ -9,9 +9,11 @@ if [[ -f deploy.env ]]; then
   source deploy.env
 fi
 
-: "${REGISTRY:?set REGISTRY, e.g. 10.186.0.3:5000 - see deploy.env.example}"
-: "${SUPABASE_URL:?set SUPABASE_URL}"
-IMAGE_NAME="${IMAGE_NAME:-phone-orchestrator}"
+: "${REGISTRY:?set REGISTRY in deploy.env - see deploy.env.example}"
+: "${IMAGE_NAME:?set IMAGE_NAME in deploy.env}"
+: "${SUPABASE_URL:?set SUPABASE_URL in deploy.env}"
+
+# Timestamped by default: Swarm will not re-pull a tag it has already resolved.
 IMAGE_TAG="${IMAGE_TAG:-$(date +%Y%m%d-%H%M%S)}"
 STACK="${STACK:-orchestrator}"
 

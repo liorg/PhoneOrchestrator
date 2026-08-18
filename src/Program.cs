@@ -3,6 +3,18 @@ using PhoneOrchestrator.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Swarm mounts secrets as files. A file wins over the env var so the
+// service-role key never has to appear in `docker service inspect`.
+foreach (var (secretFile, configKey) in new[]
+{
+    ("/run/secrets/supabase_key", "Orchestrator:SupabaseKey"),
+    ("/run/secrets/supabase_url",         "Orchestrator:SupabaseUrl")
+})
+{
+    if (File.Exists(secretFile))
+        builder.Configuration[configKey] = File.ReadAllText(secretFile).Trim();
+}
+
 builder.Services.Configure<OrchestratorOptions>(builder.Configuration.GetSection("Orchestrator"));
 
 builder.Services.AddSingleton<ScanState>();
@@ -12,6 +24,10 @@ builder.Services.AddHostedService<OrchestratorLoop>();
 builder.Services.AddControllers();
 
 var app = builder.Build();
+
+Console.WriteLine($"env={builder.Environment.EnvironmentName} cwd={Directory.GetCurrentDirectory()}");
+Console.WriteLine($"url={(string.IsNullOrEmpty(builder.Configuration["Orchestrator:SupabaseUrl"]) ? "EMPTY" : "set")}");
+
 
 app.UseDefaultFiles();
 app.UseStaticFiles();

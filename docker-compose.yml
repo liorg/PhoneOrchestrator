@@ -15,22 +15,25 @@
 #   docker push  $REGISTRY/$IMAGE_NAME:$IMAGE_TAG
 #   docker stack deploy -c docker-compose.yml orchestrator
 #
-# REGISTRY defaults to 10.186.0.3:5000 only so a bare deploy still works.
-# Override it per environment - nothing here should assume a node address.
+# No defaults on the image line, on purpose. A REGISTRY fallback would bake a
+# node address into the stack, and a :latest fallback would silently deploy a
+# stale image because Swarm does not re-pull a tag it already resolved.
+# An unset variable fails the deploy instead - use deploy.sh.
 
 version: "3.8"
 
 services:
   orchestrator:
-    image: ${REGISTRY:-10.186.0.3:5000}/${IMAGE_NAME:-phone-orchestrator}:${IMAGE_TAG:-latest}
+    image: ${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}
 
     environment:
       ASPNETCORE_URLS: http://+:8080
       # Double underscore maps onto the "Orchestrator" config section.
       Orchestrator__SupabaseUrl:         ${SUPABASE_URL}
-      # Left empty on purpose - supplied by the swarm secret below.
-      # An env var here would be visible in `docker service inspect`.
-      Orchestrator__SupabaseKey:         ""
+      # Comes from .env via deploy.sh. Visible in `docker service inspect` -
+      # if that matters, blank this line and use the supabase_key secret
+      # instead (Program.cs prefers the secret file when it exists).
+      Orchestrator__SupabaseKey:         ${SUPABASE_KEY}
       Orchestrator__HostAgentPort:       "5000"
       Orchestrator__StaleAfterSeconds:   "90"
       Orchestrator__ScanIntervalSeconds: "30"
@@ -47,9 +50,6 @@ services:
         published: 8090
         protocol: tcp
         mode: ingress
-
-    secrets:
-      - supabase_service_key
 
     networks:
       - orchestrator_net
@@ -78,13 +78,6 @@ services:
       timeout: 5s
       retries: 3
       start_period: 20s
-
-secrets:
-  # docker secret create supabase_service_key -
-  # Secrets are immutable: to rotate, create supabase_service_key_v2,
-  # point this at it, and redeploy.
-  supabase_service_key:
-    external: true
 
 networks:
   orchestrator_net:
