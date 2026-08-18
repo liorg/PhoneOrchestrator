@@ -28,6 +28,9 @@ services:
       # a swarm secret named supabase_key instead - Program.cs prefers the
       # secret file whenever /run/secrets/supabase_key exists.
       Orchestrator__SupabaseKey:         ${SUPABASE_KEY}
+      Orchestrator__AuthUser:            ${AUTH_USER:-admin}
+      # From .env. Empty disables auth - the app warns at startup if so.
+      Orchestrator__AuthPassword:        ${AUTH_PASSWORD}
       Orchestrator__HostAgentPort:       "5000"
       Orchestrator__StaleAfterSeconds:   "90"
       Orchestrator__ScanIntervalSeconds: "30"

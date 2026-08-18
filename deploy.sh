@@ -57,6 +57,7 @@ fi
 echo "==> deploy stack $STACK"
 IMAGE="$IMAGE" \
   SUPABASE_URL="$SUPABASE_URL" SUPABASE_KEY="$SUPABASE_KEY" \
+  AUTH_USER="${AUTH_USER:-admin}" AUTH_PASSWORD="${AUTH_PASSWORD:-}" \
   docker stack deploy -c docker-compose.yml "$STACK"
 
 echo "==> deployed $IMAGE"

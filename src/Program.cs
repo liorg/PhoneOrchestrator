@@ -25,9 +25,13 @@ builder.Services.AddControllers();
 
 var app = builder.Build();
 
-Console.WriteLine($"env={builder.Environment.EnvironmentName} cwd={Directory.GetCurrentDirectory()}");
-Console.WriteLine($"url={(string.IsNullOrEmpty(builder.Configuration["Orchestrator:SupabaseUrl"]) ? "EMPTY" : "set")}");
+if (string.IsNullOrEmpty(builder.Configuration["Orchestrator:AuthPassword"]))
+{
+    app.Logger.LogWarning(
+        "Orchestrator:AuthPassword is empty - the dashboard and API are UNAUTHENTICATED.");
+}
 
+app.UseMiddleware<BasicAuthMiddleware>();
 
 app.UseDefaultFiles();
 app.UseStaticFiles();

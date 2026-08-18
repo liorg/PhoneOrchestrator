@@ -41,6 +41,16 @@ public sealed class OrchestratorOptions
     /// <summary>null -> read bot_config['orchestrator.env']. Otherwise "dev" | "preprod".</summary>
     public string? Env { get; set; }
 
+    /// <summary>Username for the dashboard and API.</summary>
+    public string AuthUser { get; set; } = "admin";
+
+    /// <summary>
+    /// Password for the dashboard and API. Empty disables auth entirely,
+    /// which Program.cs warns about loudly at startup. Set it via
+    /// Orchestrator__AuthPassword - never commit a value here.
+    /// </summary>
+    public string AuthPassword { get; set; } = "";
+
     /// <summary>
     /// Master switch. false = observe and report only, never touch phones.
     /// Ships false on purpose - flip it once you trust the dashboard.
