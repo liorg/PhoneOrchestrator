@@ -16,6 +16,8 @@ public sealed class ScanState
     private const int MaxDrainHistory = 50;
 
     public DateTime? LastScanUtc { get; private set; }
+    /// <summary>While this is in the future the loop reports but never drains.</summary>
+    public DateTime? GraceUntilUtc { get; set; }
     public int       ScanCount   { get; private set; }
     public string?   LastError   { get; set; }
 

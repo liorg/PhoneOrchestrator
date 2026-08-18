@@ -8,26 +8,35 @@
 # stays reachable on the same address wherever the task lands.
 #
 # Image tags are timestamped on purpose - Swarm will not re-pull :latest.
-#   IMAGE_TAG=$(date +%Y%m%d-%H%M%S)
-#   docker build -t 10.186.0.3:5000/phone-orchestrator:$IMAGE_TAG .
-#   docker push  10.186.0.3:5000/phone-orchestrator:$IMAGE_TAG
-#   IMAGE_TAG=$IMAGE_TAG docker stack deploy -c docker-compose.yml orchestrator
+#
+#   source deploy.env                     # REGISTRY / IMAGE_NAME / SUPABASE_URL
+#   export IMAGE_TAG=$(date +%Y%m%d-%H%M%S)
+#   docker build -t $REGISTRY/$IMAGE_NAME:$IMAGE_TAG .
+#   docker push  $REGISTRY/$IMAGE_NAME:$IMAGE_TAG
+#   docker stack deploy -c docker-compose.yml orchestrator
+#
+# REGISTRY defaults to 10.186.0.3:5000 only so a bare deploy still works.
+# Override it per environment - nothing here should assume a node address.
 
 version: "3.8"
 
 services:
   orchestrator:
-    image: 10.186.0.3:5000/phone-orchestrator:${IMAGE_TAG:-latest}
+    image: ${REGISTRY:-10.186.0.3:5000}/${IMAGE_NAME:-phone-orchestrator}:${IMAGE_TAG:-latest}
 
     environment:
       ASPNETCORE_URLS: http://+:8080
       # Double underscore maps onto the "Orchestrator" config section.
       Orchestrator__SupabaseUrl:         ${SUPABASE_URL}
-      Orchestrator__SupabaseKey:         ${SUPABASE_SERVICE_KEY}
+      # Left empty on purpose - supplied by the swarm secret below.
+      # An env var here would be visible in `docker service inspect`.
+      Orchestrator__SupabaseKey:         ""
       Orchestrator__HostAgentPort:       "5000"
       Orchestrator__StaleAfterSeconds:   "90"
       Orchestrator__ScanIntervalSeconds: "30"
       Orchestrator__FailuresBeforeDrain: "3"
+      # Observe-only window after start. Must outlast the slowest HostAgent boot.
+      Orchestrator__StartupGraceSeconds: "180"
       # Leave empty to take the value from bot_config['orchestrator.env'].
       Orchestrator__Env:                 ""
       # Ship observing. Flip to "true" once the dashboard looks right.
@@ -38,6 +47,9 @@ services:
         published: 8090
         protocol: tcp
         mode: ingress
+
+    secrets:
+      - supabase_service_key
 
     networks:
       - orchestrator_net
@@ -66,6 +78,13 @@ services:
       timeout: 5s
       retries: 3
       start_period: 20s
+
+secrets:
+  # docker secret create supabase_service_key -
+  # Secrets are immutable: to rotate, create supabase_service_key_v2,
+  # point this at it, and redeploy.
+  supabase_service_key:
+    external: true
 
 networks:
   orchestrator_net:

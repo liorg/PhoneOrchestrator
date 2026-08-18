@@ -19,6 +19,7 @@ public sealed class OrchestratorLoop : BackgroundService
     private readonly ILogger<OrchestratorLoop> _log;
 
     private readonly Dictionary<Guid, int> _failures = new();
+    private DateTime _graceUntilUtc;
 
     public OrchestratorLoop(
         IServiceScopeFactory scopes,
@@ -34,13 +35,17 @@ public sealed class OrchestratorLoop : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken ct)
     {
+        _graceUntilUtc = DateTime.UtcNow.AddSeconds(_opt.StartupGraceSeconds);
+        _state.GraceUntilUtc = _graceUntilUtc;
+
         _log.LogInformation(
             "PhoneOrchestrator {Marker} starting. interval={Interval}s stale={Stale}s " +
-            "failuresBeforeDrain={Threshold} autoDrain={AutoDrain}",
+            "failuresBeforeDrain={Threshold} autoDrain={AutoDrain} grace={Grace}s",
             BuildInfo.Marker, _opt.ScanIntervalSeconds, _opt.StaleAfterSeconds,
-            _opt.FailuresBeforeDrain, _opt.AutoDrain);
+            _opt.FailuresBeforeDrain, _opt.AutoDrain, _opt.StartupGraceSeconds);
 
-        // Let HostAgents settle before the first verdict.
+        // Probing starts immediately so the dashboard is populated, but no
+        // phone is moved until the grace window closes. See StartupGraceSeconds.
         await Task.Delay(TimeSpan.FromSeconds(5), ct);
 
         while (!ct.IsCancellationRequested)
@@ -112,6 +117,15 @@ public sealed class OrchestratorLoop : BackgroundService
                 CheckedAtUtc:        DateTime.UtcNow));
 
             if (!shouldDrain) continue;
+
+            if (DateTime.UtcNow < _graceUntilUtc)
+            {
+                _log.LogWarning(
+                    "Host {Host} unavailable ({Fails} consecutive) but startup grace is still open " +
+                    "for {Secs}s - not moving phones.",
+                    host.Host_Name, fails, (int)(_graceUntilUtc - DateTime.UtcNow).TotalSeconds);
+                continue;
+            }
 
             if (!_opt.AutoDrain)
             {

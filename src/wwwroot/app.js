@@ -58,8 +58,13 @@ async function loadStatus() {
   $('m-marker').textContent = s.marker ?? '—';
 
   const pill = $('m-auto');
-  pill.textContent = s.autoDrain ? 'auto-drain on' : 'auto-drain off';
-  pill.dataset.on  = String(!!s.autoDrain);
+  if (s.inGrace) {
+    pill.textContent = 'grace · ' + ago(s.graceUntilUtc).replace('-', '') + ' left';
+    pill.dataset.on  = 'false';
+  } else {
+    pill.textContent = s.autoDrain ? 'auto-drain on' : 'auto-drain off';
+    pill.dataset.on  = String(!!s.autoDrain);
+  }
 
   const dot = $('pulse');
   if (s.lastError) dot.dataset.state = 'down';

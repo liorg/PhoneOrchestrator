@@ -29,6 +29,15 @@ public sealed class OrchestratorOptions
     /// <summary>Consecutive failed probes before a host is drained. Anti-flap.</summary>
     public int FailuresBeforeDrain { get; set; } = 3;
 
+    /// <summary>
+    /// Observe-only window after this service starts. Exists for the reboot
+    /// case: when the whole cluster comes up, every HostAgent is briefly down.
+    /// Without a grace period the loop would declare all of them dead and pile
+    /// the entire fleet onto whichever host finished booting first.
+    /// Should comfortably exceed the slowest HostAgent's boot time.
+    /// </summary>
+    public int StartupGraceSeconds { get; set; } = 180;
+
     /// <summary>null -> read bot_config['orchestrator.env']. Otherwise "dev" | "preprod".</summary>
     public string? Env { get; set; }
 
