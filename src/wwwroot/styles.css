@@ -1,0 +1,231 @@
+/* PhoneOrchestrator - instrument panel.
+   Data is set in mono throughout: hostnames, IPs and ports are the
+   vernacular of this subject, so they get the typeface machines use. */
+
+:root {
+  --ground:   #0F1620;
+  --panel:    #16202C;
+  --raise:    #1B2735;
+  --rule:     #253347;
+  --paper:    #DDE5EE;
+  --muted:    #7C8CA0;
+  --dim:      #4A5A6E;
+
+  --ok:       #4FC1A6;
+  --warn:     #E0A33C;
+  --bad:      #E2645C;
+
+  --mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+  --sans: system-ui, -apple-system, "Segoe UI", "Noto Sans Hebrew", Arial, sans-serif;
+
+  --gap: 20px;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--paper);
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+/* ---------------------------------------------------------------- header */
+
+.bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gap);
+  padding: 14px 22px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--rule);
+}
+
+.bar__id { display: flex; align-items: center; gap: 10px; }
+
+.bar h1 {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: .04em;
+  direction: ltr;
+}
+.bar h1 em { color: var(--muted); font-style: normal; }
+
+.dot {
+  width: 9px; height: 9px; border-radius: 50%;
+  background: var(--ok);
+  box-shadow: 0 0 0 0 rgba(79,193,166,.55);
+  animation: ping 2.4s ease-out infinite;
+}
+.dot[data-state="stale"] { background: var(--warn); animation: none; }
+.dot[data-state="down"]  { background: var(--bad);  animation: none; }
+
+@keyframes ping {
+  0%   { box-shadow: 0 0 0 0 rgba(79,193,166,.5); }
+  70%  { box-shadow: 0 0 0 9px rgba(79,193,166,0); }
+  100% { box-shadow: 0 0 0 0 rgba(79,193,166,0); }
+}
+
+.bar__meta {
+  display: flex; flex-wrap: wrap; gap: var(--gap);
+  margin: 0; margin-inline-start: auto;
+}
+.bar__meta div { display: flex; flex-direction: column; }
+.bar__meta dt {
+  font-size: 10px; letter-spacing: .14em; text-transform: uppercase;
+  color: var(--dim);
+}
+.bar__meta dd {
+  margin: 0; font-family: var(--mono); font-size: 13px; direction: ltr;
+  text-align: start;
+}
+
+.pill {
+  font-family: var(--mono); font-size: 11px; letter-spacing: .08em;
+  padding: 4px 10px; border-radius: 2px;
+  border: 1px solid var(--rule); color: var(--muted);
+  text-transform: uppercase; white-space: nowrap;
+}
+.pill[data-on="true"]  { border-color: var(--ok);   color: var(--ok); }
+.pill[data-on="false"] { border-color: var(--warn); color: var(--warn); }
+
+.banner {
+  margin: 0; padding: 10px 22px;
+  background: rgba(226,100,92,.12);
+  border-bottom: 1px solid var(--bad);
+  color: var(--bad);
+  font-family: var(--mono); font-size: 13px;
+}
+
+/* ----------------------------------------------------------------- shell */
+
+main {
+  display: grid;
+  grid-template-columns: minmax(320px, 420px) 1fr;
+  gap: 1px;
+  background: var(--rule);
+  min-height: calc(100vh - 58px);
+}
+
+.panel { background: var(--ground); padding: 18px 22px 28px; min-width: 0; }
+
+.panel__head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 12px; margin-bottom: 14px;
+  border-bottom: 1px solid var(--rule); padding-bottom: 10px;
+}
+.panel__head h2 {
+  margin: 0; font-size: 11px; letter-spacing: .18em; text-transform: uppercase;
+  color: var(--muted); font-weight: 600;
+}
+
+.empty { color: var(--dim); font-size: 14px; padding: 24px 0; }
+
+/* ------------------------------------------------------------ host cards */
+
+.hosts { display: flex; flex-direction: column; gap: 10px; }
+
+.host {
+  width: 100%; text-align: start;
+  background: var(--panel); border: 1px solid var(--rule);
+  border-radius: 3px; padding: 12px 14px;
+  color: inherit; font: inherit; cursor: pointer;
+  display: grid; gap: 10px;
+  transition: border-color .12s, background .12s;
+}
+.host:hover { background: var(--raise); border-color: var(--dim); }
+.host:focus-visible { outline: 2px solid var(--ok); outline-offset: 2px; }
+.host[aria-current="true"] { border-color: var(--ok); background: var(--raise); }
+
+.host__top { display: flex; align-items: baseline; gap: 10px; }
+.host__name {
+  font-family: var(--mono); font-size: 14px; direction: ltr;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.host__ip {
+  font-family: var(--mono); font-size: 12px; color: var(--dim); direction: ltr;
+  margin-inline-start: auto;
+}
+
+.host__stats {
+  display: flex; gap: 16px; flex-wrap: wrap;
+  font-family: var(--mono); font-size: 12px; color: var(--muted);
+  direction: ltr;
+}
+.host__stats b { color: var(--paper); font-weight: 500; }
+
+/* Signature: the gate strip. Five bars, one per rule in the spec.
+   Reads as a barcode - eligibility without reading a single number. */
+.gates { display: flex; align-items: flex-end; gap: 4px; }
+.gate {
+  width: 100%; max-width: 46px; height: 22px;
+  border: 1px solid var(--rule); border-radius: 1px;
+  background: transparent;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--mono); font-size: 10px; letter-spacing: .06em;
+  color: var(--dim);
+}
+.gate[data-pass="true"]  { border-color: var(--ok);  color: var(--ok);  background: rgba(79,193,166,.10); }
+.gate[data-pass="false"] { border-color: var(--bad); color: var(--bad); background: rgba(226,100,92,.12); }
+
+.tag {
+  font-family: var(--mono); font-size: 10px; letter-spacing: .1em;
+  text-transform: uppercase; padding: 2px 7px; border-radius: 2px;
+}
+.tag--ok    { color: var(--ok);   background: rgba(79,193,166,.12); }
+.tag--warn  { color: var(--warn); background: rgba(224,163,60,.14); }
+.tag--bad   { color: var(--bad);  background: rgba(226,100,92,.14); }
+
+.host__err {
+  font-family: var(--mono); font-size: 11px; color: var(--bad);
+  direction: ltr; word-break: break-word;
+}
+
+/* ---------------------------------------------------------------- tables */
+
+.tbl { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 12.5px; }
+.tbl th {
+  text-align: start; font-weight: 600; font-size: 10px; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--dim);
+  padding: 8px 10px; border-bottom: 1px solid var(--rule); white-space: nowrap;
+}
+.tbl td {
+  padding: 9px 10px; border-bottom: 1px solid var(--panel);
+  direction: ltr; text-align: start; vertical-align: middle;
+}
+.tbl tr:hover td { background: var(--panel); }
+.num { color: var(--muted); }
+.nil { color: var(--dim); }
+
+.wrap { overflow-x: auto; }
+
+/* ---------------------------------------------------------------- paging */
+
+.pager { display: flex; align-items: center; gap: 6px; }
+.pager button {
+  font-family: var(--mono); font-size: 12px;
+  background: transparent; color: var(--muted);
+  border: 1px solid var(--rule); border-radius: 2px;
+  padding: 3px 9px; cursor: pointer;
+}
+.pager button:hover:not(:disabled) { color: var(--paper); border-color: var(--dim); }
+.pager button:disabled { opacity: .35; cursor: default; }
+.pager button:focus-visible { outline: 2px solid var(--ok); outline-offset: 2px; }
+.pager span { font-family: var(--mono); font-size: 11px; color: var(--dim); direction: ltr; }
+
+/* ---------------------------------------------------------------- mobile */
+
+@media (max-width: 860px) {
+  main { grid-template-columns: 1fr; }
+  .bar__meta { margin-inline-start: 0; gap: 14px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dot { animation: none; }
+  * { transition: none !important; }
+}

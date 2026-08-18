@@ -1,1 +1,53 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PhoneOrchestrator</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
 
+<header class="bar">
+  <div class="bar__id">
+    <span class="dot" id="pulse" aria-hidden="true"></span>
+    <h1>Phone<em>Orchestrator</em></h1>
+  </div>
+  <dl class="bar__meta" id="meta">
+    <div><dt>סריקה אחרונה</dt><dd id="m-scan">—</dd></div>
+    <div><dt>סבב</dt><dd id="m-count">—</dd></div>
+    <div><dt>סביבה</dt><dd id="m-env">—</dd></div>
+    <div><dt>build</dt><dd id="m-marker">—</dd></div>
+  </dl>
+  <span class="pill" id="m-auto">—</span>
+</header>
+
+<p class="banner" id="banner" hidden></p>
+
+<main>
+
+  <section class="panel" aria-labelledby="h-hosts">
+    <div class="panel__head">
+      <h2 id="h-hosts">שרתים</h2>
+      <div class="pager" id="hostPager"></div>
+    </div>
+    <div id="hosts" class="hosts">
+      <p class="empty">טוען שרתים…</p>
+    </div>
+  </section>
+
+  <section class="panel" aria-labelledby="h-phones">
+    <div class="panel__head">
+      <h2 id="h-phones">טלפונים</h2>
+      <div class="pager" id="phonePager"></div>
+    </div>
+    <div id="phones">
+      <p class="empty">בחר שרת כדי לראות את הטלפונים שעליו.</p>
+    </div>
+  </section>
+
+</main>
+
+<script src="app.js"></script>
+</body>
+</html>
