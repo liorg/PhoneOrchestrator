@@ -1,0 +1,73 @@
+# Swarm stack for PhoneOrchestrator.
+#
+#   docker stack deploy -c docker-compose.yml orchestrator
+#
+# Singleton by design: replicas = 1. When the node holding it dies, Swarm
+# reschedules the task onto another node in the cluster, which is the
+# failover requirement. Ports come from the routing mesh, so the dashboard
+# stays reachable on the same address wherever the task lands.
+#
+# Image tags are timestamped on purpose - Swarm will not re-pull :latest.
+#   IMAGE_TAG=$(date +%Y%m%d-%H%M%S)
+#   docker build -t 10.186.0.3:5000/phone-orchestrator:$IMAGE_TAG .
+#   docker push  10.186.0.3:5000/phone-orchestrator:$IMAGE_TAG
+#   IMAGE_TAG=$IMAGE_TAG docker stack deploy -c docker-compose.yml orchestrator
+
+version: "3.8"
+
+services:
+  orchestrator:
+    image: 10.186.0.3:5000/phone-orchestrator:${IMAGE_TAG:-latest}
+
+    environment:
+      ASPNETCORE_URLS: http://+:8080
+      # Double underscore maps onto the "Orchestrator" config section.
+      Orchestrator__SupabaseUrl:         ${SUPABASE_URL}
+      Orchestrator__SupabaseKey:         ${SUPABASE_SERVICE_KEY}
+      Orchestrator__HostAgentPort:       "5000"
+      Orchestrator__StaleAfterSeconds:   "90"
+      Orchestrator__ScanIntervalSeconds: "30"
+      Orchestrator__FailuresBeforeDrain: "3"
+      # Leave empty to take the value from bot_config['orchestrator.env'].
+      Orchestrator__Env:                 ""
+      # Ship observing. Flip to "true" once the dashboard looks right.
+      Orchestrator__AutoDrain:           "false"
+
+    ports:
+      - target: 8080
+        published: 8090
+        protocol: tcp
+        mode: ingress
+
+    networks:
+      - orchestrator_net
+
+    deploy:
+      replicas: 1
+      # Uncomment only if you have more than one manager - a single-manager
+      # constraint would defeat the failover this service exists for.
+      # placement:
+      #   constraints: [node.role == manager]
+      restart_policy:
+        condition: any
+        delay: 5s
+        max_attempts: 0
+      update_config:
+        order: stop-first     # singleton: never run two at once
+        failure_action: rollback
+        delay: 10s
+      resources:
+        limits:
+          memory: 256M
+
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/health || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+networks:
+  orchestrator_net:
+    driver: overlay
+    attachable: true
