@@ -33,8 +33,10 @@ else
   IMAGE="$IMAGE_NAME:$IMAGE_TAG"
 fi
 
-echo "==> build $IMAGE"
-docker build -t "$IMAGE" .
+BUILD_MARKER="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)-$IMAGE_TAG"
+
+echo "==> build $IMAGE  ($BUILD_MARKER)"
+docker build --build-arg BUILD_MARKER="$BUILD_MARKER" -t "$IMAGE" .
 
 if [[ -n "${REGISTRY:-}" ]]; then
   echo "==> push"
@@ -61,4 +63,6 @@ IMAGE="$IMAGE" \
   docker stack deploy -c docker-compose.yml "$STACK"
 
 echo "==> deployed $IMAGE"
+echo "    expected marker: $BUILD_MARKER"
+echo "    verify:  curl -s localhost:8090/version | jq -r .marker"
 echo "    verify: curl -s http://<any-node>:8090/version"
