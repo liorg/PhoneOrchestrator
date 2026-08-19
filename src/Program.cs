@@ -27,6 +27,15 @@ builder.Services.AddControllers();
 
 var app = builder.Build();
 
+// nginx terminates TLS, so without this the app sees every request as plain
+// HTTP from 127.0.0.1: the session cookie would never be marked Secure, and
+// every failed sign-in would be logged as coming from the proxy rather than
+// from whoever actually tried. Defaults trust loopback proxies only, which
+// is exactly our case - nginx runs on the same host.
+app.UseForwardedHeaders(new ForwardedHeadersOptions
+{
+    ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
+});
 if (string.IsNullOrEmpty(builder.Configuration["Orchestrator:AuthPassword"]))
 {
     app.Logger.LogWarning(
