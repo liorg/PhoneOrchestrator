@@ -43,7 +43,7 @@ public sealed class HeartbeatPayload
 
 public static class BuildInfo
 {
-    public const string Version = "1.0.0";
+    public const string Version = "1.0.1";
     /// <summary>Unique per build - the reliable way to confirm what Swarm is actually running.</summary>
     public const string Marker  = "orch-2026-08-18-a";
 }
