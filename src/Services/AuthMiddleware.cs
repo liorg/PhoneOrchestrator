@@ -30,6 +30,7 @@ public sealed class AuthMiddleware
     private static readonly string[] Open =
     {
         "/health",
+        "/version",
         "/login.html",
         "/styles.css",
         "/api/auth/login",
