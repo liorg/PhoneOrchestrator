@@ -14,6 +14,12 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=build /app ./
+
+# Passed by deploy.sh as "<git-sha>-<image-tag>". Read at runtime by
+# BuildInfo.Marker and surfaced at /version.
+ARG BUILD_MARKER=dev
+ENV BUILD_MARKER=$BUILD_MARKER
+
 ENV ASPNETCORE_URLS=http://+:8080
 EXPOSE 8080
 ENTRYPOINT ["dotnet", "PhoneOrchestrator.dll"]
