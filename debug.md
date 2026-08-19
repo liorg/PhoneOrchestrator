@@ -11,8 +11,6 @@ curl -s -u admin:"$AUTH_PASSWORD" localhost:8090/api/hosts | jq '.items[] | {hos
 ```
 
 ```bash
-
-sleep 25
 docker service ps orchestrator_orchestrator | head -3
 curl -s -o /dev/null -w '%{http_code}\n' localhost:8090/api/hosts
 curl -s -o /dev/null -w '%{http_code}\n' -u admin:'<סיסמה>' localhost:8090/api/hosts
@@ -24,7 +22,6 @@ curl -s localhost:8090/health
 ```bash
 docker service ps orchestrator_orchestrator --no-trunc | head -5
 docker service logs orchestrator_orchestrator --tail 20
-
 ```
 
 ```bash
@@ -44,5 +41,12 @@ docker run --rm oc-test ls -la wwwroot
 ```bash
 cd /opt/phone-orchestrator
 git pull
+./deploy.sh
+```
+```bash
+cd /opt/phone-orchestrator
+git checkout -- deploy.sh
+git pull
+chmod +x deploy.sh
 ./deploy.sh
 ```
