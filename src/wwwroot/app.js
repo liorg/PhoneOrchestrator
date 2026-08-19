@@ -97,7 +97,40 @@ function gateStrip(h) {
     `<span class="gate" data-pass="${g.pass}" title="${esc(g.t)}">${g.k}</span>`
   ).join('') + `</div>`;
 }
+/* ---------------------------------------------------------------- gauges */
 
+// Semicircular arc gauge, drawn inline as SVG - no chart library.
+// Geometry: radius 26 centred at (34,34), sweeping 180deg left to right,
+// so the arc length is PI*26 = 81.68. The value arc is that same path
+// clipped with stroke-dasharray, which is why no second path is needed.
+const ARC_LEN = Math.PI * 26;
+
+function gauge(label, pct, warnAt) {
+  const has = pct !== null && pct !== undefined && !isNaN(pct);
+  const v = has ? Math.max(0, Math.min(100, Number(pct))) : 0;
+
+  let tone = 'ok';
+  if (has && v >= warnAt) tone = 'bad';
+  else if (has && v >= warnAt - 15) tone = 'warn';
+
+  // Needle sweeps the same 180deg. 0% points left, 100% points right.
+  const rad = Math.PI * (1 - v / 100);
+  const nx = 34 + 21 * Math.cos(rad);
+  const ny = 34 - 21 * Math.sin(rad);
+
+  return `
+    <div class="gauge" data-tone="${tone}">
+      <svg viewBox="0 0 68 46" aria-hidden="true">
+        <path class="gauge__track" d="M 8 34 A 26 26 0 0 1 60 34"/>
+        <path class="gauge__fill" d="M 8 34 A 26 26 0 0 1 60 34"
+              stroke-dasharray="${(v / 100 * ARC_LEN).toFixed(2)} ${ARC_LEN.toFixed(2)}"/>
+        ${has ? `<line class="gauge__needle" x1="34" y1="34" x2="${nx.toFixed(1)}" y2="${ny.toFixed(1)}"/>
+                 <circle class="gauge__hub" cx="34" cy="34" r="2.5"/>` : ''}
+      </svg>
+      <span class="gauge__val">${has ? v.toFixed(0) + '%' : '—'}</span>
+      <span class="gauge__lbl">${label}</span>
+    </div>`;
+}
 function hostCard(h) {
   const p = h.probe;
   let tag = '<span class="tag tag--ok">כשיר</span>';
