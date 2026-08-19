@@ -28,6 +28,12 @@ docker service logs orchestrator_orchestrator --tail 20
 ```
 
 ```bash
+curl -s http://localhost:8090/version
+
+```
+
+
+```bash
 cd /opt/phone-orchestrator
 git pull
 ./deploy.sh
