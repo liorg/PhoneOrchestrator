@@ -18,6 +18,7 @@ foreach (var (secretFile, configKey) in new[]
 builder.Services.Configure<OrchestratorOptions>(builder.Configuration.GetSection("Orchestrator"));
 
 builder.Services.AddSingleton<ScanState>();
+builder.Services.AddSingleton<AuthTokens>();
 builder.Services.AddHttpClient<SupabaseRpc>();
 builder.Services.AddHttpClient<HostProbe>();
 builder.Services.AddHostedService<OrchestratorLoop>();
@@ -31,7 +32,7 @@ if (string.IsNullOrEmpty(builder.Configuration["Orchestrator:AuthPassword"]))
         "Orchestrator:AuthPassword is empty - the dashboard and API are UNAUTHENTICATED.");
 }
 
-app.UseMiddleware<BasicAuthMiddleware>();
+app.UseMiddleware<AuthMiddleware>();
 
 app.UseDefaultFiles();
 app.UseStaticFiles();
