@@ -13,7 +13,7 @@
     <span class="dot" id="pulse" aria-hidden="true"></span>
     <h1>Phone<em>Orchestrator</em></h1>
   </div>
-  <dl class="bar__meta" id="meta">
+  <dl class="bar__meta">
     <div><dt>סריקה אחרונה</dt><dd id="m-scan">—</dd></div>
     <div><dt>סבב</dt><dd id="m-count">—</dd></div>
     <div><dt>סביבה</dt><dd id="m-env">—</dd></div>
@@ -25,28 +25,29 @@
 
 <p class="banner" id="banner" hidden></p>
 
-<main>
+<!-- ---------------------------------------------------------- hosts view -->
+<main class="view" id="view-hosts">
+  <div class="view__head">
+    <h2>שרתים</h2>
+    <div class="pager" id="hostPager"></div>
+  </div>
+  <div id="hosts" class="hosts">
+    <p class="empty">טוען שרתים…</p>
+  </div>
+</main>
 
-  <section class="panel" aria-labelledby="h-hosts">
-    <div class="panel__head">
-      <h2 id="h-hosts">שרתים</h2>
-      <div class="pager" id="hostPager"></div>
-    </div>
-    <div id="hosts" class="hosts">
-      <p class="empty">טוען שרתים…</p>
-    </div>
-  </section>
+<!-- --------------------------------------------------------- phones view -->
+<main class="view" id="view-phones" hidden>
+  <div class="view__head">
+    <button class="back" id="back">חזרה לשרתים</button>
+    <div class="pager" id="phonePager"></div>
+  </div>
 
-  <section class="panel" aria-labelledby="h-phones">
-    <div class="panel__head">
-      <h2 id="h-phones">טלפונים</h2>
-      <div class="pager" id="phonePager"></div>
-    </div>
-    <div id="phones">
-      <p class="empty">בחר שרת כדי לראות את הטלפונים שעליו.</p>
-    </div>
-  </section>
+  <div class="hostbar" id="hostbar"></div>
 
+  <div id="phones">
+    <p class="empty">טוען…</p>
+  </div>
 </main>
 
 <script src="app.js"></script>
