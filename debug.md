@@ -39,10 +39,11 @@ docker run --rm oc-test ls -la wwwroot
 
 
 ```bash
-cd /opt/phone-orchestrator
-git pull
-./deploy.sh
+git pull && ./deploy.sh
+sleep 30
+curl -s localhost:8090/version | jq
 ```
+
 ```bash
 cd /opt/phone-orchestrator
 git checkout -- deploy.sh
