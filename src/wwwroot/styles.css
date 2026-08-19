@@ -159,6 +159,61 @@ main {
 }
 .host__stats b { color: var(--paper); font-weight: 500; }
 
+/* Gauges: cpu, ram and disk as swept arcs with a needle. The dial is the
+   literal form of what this panel is - three readings you scan, not read. */
+
+.gauges {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  justify-items: center;
+}
+
+.gauge { display: grid; justify-items: center; width: 100%; max-width: 76px; }
+.gauge svg { width: 100%; height: auto; overflow: visible; }
+
+.gauge__track {
+  fill: none;
+  stroke: var(--rule);
+  stroke-width: 5;
+  stroke-linecap: round;
+}
+.gauge__fill {
+  fill: none;
+  stroke-width: 5;
+  stroke-linecap: round;
+  transition: stroke-dasharray .4s ease;
+}
+.gauge__needle { stroke-width: 1.5; stroke-linecap: round; transition: all .4s ease; }
+
+.gauge[data-tone="ok"]   .gauge__fill,
+.gauge[data-tone="ok"]   .gauge__needle { stroke: var(--ok); }
+.gauge[data-tone="ok"]   .gauge__hub    { fill: var(--ok); }
+.gauge[data-tone="warn"] .gauge__fill,
+.gauge[data-tone="warn"] .gauge__needle { stroke: var(--warn); }
+.gauge[data-tone="warn"] .gauge__hub    { fill: var(--warn); }
+.gauge[data-tone="bad"]  .gauge__fill,
+.gauge[data-tone="bad"]  .gauge__needle { stroke: var(--bad); }
+.gauge[data-tone="bad"]  .gauge__hub    { fill: var(--bad); }
+
+.gauge__val {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--paper);
+  margin-top: -6px;
+}
+.gauge__lbl {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gauge__fill, .gauge__needle { transition: none; }
+}
+
 /* Signature: the gate strip. Five bars, one per rule in the spec.
    Reads as a barcode - eligibility without reading a single number. */
 .gates { display: flex; align-items: flex-end; gap: 4px; }
@@ -229,3 +284,90 @@ main {
   .dot { animation: none; }
   * { transition: none !important; }
 }
+
+/* ----------------------------------------------------------------- login */
+
+.login-body { display: flex; min-height: 100vh; }
+
+.login {
+  margin: auto;
+  width: 100%;
+  max-width: 340px;
+  padding: 24px;
+}
+
+.login__card {
+  background: var(--panel);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  padding: 28px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.login__brand {
+  margin: 0 0 4px;
+  font-family: var(--mono);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: .04em;
+  direction: ltr;
+  text-align: center;
+}
+.login__brand em { color: var(--muted); font-style: normal; }
+
+.login__field { display: flex; flex-direction: column; gap: 6px; }
+.login__field span {
+  font-size: 10px; letter-spacing: .14em; text-transform: uppercase;
+  color: var(--dim);
+}
+.login__field input {
+  background: var(--ground);
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  color: var(--paper);
+  font-family: var(--mono);
+  font-size: 14px;
+  padding: 9px 10px;
+  direction: ltr;
+  text-align: start;
+}
+.login__field input:focus {
+  outline: none;
+  border-color: var(--ok);
+}
+
+.login__error {
+  margin: 0;
+  font-size: 12px;
+  color: var(--bad);
+}
+
+.login__go {
+  background: transparent;
+  border: 1px solid var(--ok);
+  border-radius: 2px;
+  color: var(--ok);
+  font-family: var(--mono);
+  font-size: 13px;
+  letter-spacing: .08em;
+  padding: 9px;
+  cursor: pointer;
+}
+.login__go:hover:not(:disabled) { background: rgba(79,193,166,.12); }
+.login__go:disabled { opacity: .5; cursor: default; }
+.login__go:focus-visible { outline: 2px solid var(--ok); outline-offset: 2px; }
+
+.bar__out {
+  background: transparent;
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: .08em;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+.bar__out:hover { color: var(--paper); border-color: var(--dim); }

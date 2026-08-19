@@ -35,6 +35,12 @@ function cell(v) {
 
 async function get(url) {
   const res = await fetch(url);
+  // The session expired or was cleared - go re-authenticate rather than
+  // leaving the dashboard showing stale numbers behind an error banner.
+  if (res.status === 401) {
+    location.href = '/login.html';
+    throw new Error('unauthenticated');
+  }
   if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
   return res.json();
 }
@@ -99,8 +105,6 @@ function hostCard(h) {
   else if (p && !p.reachable)   tag = `<span class="tag tag--bad">לא נענה ×${p.consecutiveFailures}</span>`;
   else if (!h.eligible)         tag = '<span class="tag tag--warn">לא מקבל</span>';
 
-  const ram = h.ram_pct == null ? '—' : h.ram_pct + '%';
-  const cpu = h.cpu_percent == null ? '—' : Number(h.cpu_percent).toFixed(1) + '%';
   const err = p && p.error
     ? `<div class="host__err">${esc(p.error)}</div>` : '';
 
@@ -112,10 +116,13 @@ function hostCard(h) {
         ${tag}
         <span class="host__ip">${cell(h.ip_address)}</span>
       </div>
+      <div class="gauges">
+        ${gauge('cpu',  h.cpu_percent, 85)}
+        ${gauge('ram',  h.ram_pct,     85)}
+        ${gauge('disk', h.disk_pct,    90)}
+      </div>
       <div class="host__stats">
         <span>phones <b>${h.phone_count ?? 0}</b>/${h.max_containers ?? '?'}</span>
-        <span>cpu <b>${cpu}</b></span>
-        <span>ram <b>${ram}</b></span>
         <span>hb <b>${ago(h.last_heartbeat)}</b></span>
         ${p ? `<span>rtt <b>${p.elapsedMs}ms</b></span>` : ''}
       </div>
@@ -229,6 +236,11 @@ async function tick() {
   await loadHosts();
   if (state.selectedHost) await loadPhones();
 }
+
+document.getElementById('logout').addEventListener('click', async () => {
+  try { await fetch('/api/auth/logout', { method: 'POST' }); } catch (e) {}
+  location.href = '/login.html';
+});
 
 tick();
 setInterval(tick, REFRESH_MS);

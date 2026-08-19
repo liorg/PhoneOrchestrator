@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PhoneOrchestrator</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body class="login-body">
+
+<main class="login">
+  <div class="login__card">
+    <h1 class="login__brand">Phone<em>Orchestrator</em></h1>
+
+    <label class="login__field">
+      <span>משתמש</span>
+      <input id="user" type="text" autocomplete="username" autofocus spellcheck="false">
+    </label>
+
+    <label class="login__field">
+      <span>סיסמה</span>
+      <input id="pass" type="password" autocomplete="current-password">
+    </label>
+
+    <p class="login__error" id="err" role="alert" hidden></p>
+
+    <button class="login__go" id="go">כניסה</button>
+  </div>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+
+function fail(msg) {
+  const e = $('err');
+  e.textContent = msg;
+  e.hidden = false;
+}
+
+async function submit() {
+  const user = $('user').value.trim();
+  const password = $('pass').value;
+
+  if (!user || !password) {
+    fail('הזן שם משתמש וסיסמה.');
+    return;
+  }
+
+  $('go').disabled = true;
+  $('go').textContent = 'בודק…';
+
+  try {
+    const res = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user, password })
+    });
+
+    if (res.ok) {
+      location.href = '/';
+      return;
+    }
+
+    const body = await res.json().catch(() => ({}));
+    fail(body.error || 'הכניסה נכשלה.');
+  } catch (e) {
+    fail('אין תקשורת עם השרת.');
+  }
+
+  $('go').disabled = false;
+  $('go').textContent = 'כניסה';
+}
+
+$('go').addEventListener('click', submit);
+['user', 'pass'].forEach((id) => {
+  $(id).addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
+  $(id).addEventListener('input', () => { $('err').hidden = true; });
+});
+</script>
+</body>
+</html>
