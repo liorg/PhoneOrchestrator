@@ -40,10 +40,10 @@ public sealed class HeartbeatPayload
     public int?     PhoneCount     { get; set; }
     public int?     ContainerCount { get; set; }
 }
-
 public static class BuildInfo
 {
-    public const string Version = "1.0.1";
-    /// <summary>Unique per build - the reliable way to confirm what Swarm is actually running.</summary>
-    public const string Marker  = "orch-2026-08-18-a";
+    public const string Version = "1.0.5";
+    public static readonly string Marker =
+        Environment.GetEnvironmentVariable("BUILD_MARKER") ?? "dev";
 }
+
