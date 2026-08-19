@@ -18,6 +18,7 @@ foreach (var (secretFile, configKey) in new[]
 builder.Services.Configure<OrchestratorOptions>(builder.Configuration.GetSection("Orchestrator"));
 
 builder.Services.AddSingleton<ScanState>();
+builder.Services.AddDataProtection();
 builder.Services.AddSingleton<AuthTokens>();
 builder.Services.AddHttpClient<SupabaseRpc>();
 builder.Services.AddHttpClient<HostProbe>();
