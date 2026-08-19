@@ -69,13 +69,6 @@ services:
         limits:
           memory: 256M
 
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/health || exit 1"]
-      interval: 20s
-      timeout: 5s
-      retries: 3
-      start_period: 20s
-
 networks:
   orchestrator_net:
     driver: overlay
