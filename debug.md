@@ -31,6 +31,14 @@ docker service logs orchestrator_orchestrator --tail 20
 curl -s http://localhost:8090/version
 
 ```
+תריץ רק את השתיים ותדביק:
+הפקודות האלה נועדו לבדוק האם login.html באמת נכנס ל־Docker image.
+```bash
+cd /opt/phone-orchestrator
+docker build --no-cache -t oc-test . 2>&1 | tail -25
+echo "=== wwwroot in image ==="
+docker run --rm oc-test ls -la wwwroot
+```
 
 
 ```bash
