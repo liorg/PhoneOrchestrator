@@ -7,8 +7,12 @@ using PhoneOrchestrator.Models;
 namespace PhoneOrchestrator.Services;
 
 /// <summary>
-/// Thin PostgREST caller. Everything goes through an RPC - one round trip per
-/// endpoint, all queue and eligibility logic stays in the DB layer.
+/// Thin PostgREST caller. Anything with real logic goes through an RPC - one
+/// round trip per endpoint, all queue and eligibility rules stay in the DB.
+///
+/// The generic table helpers at the bottom exist for the canary tables only.
+/// They hold at most a handful of rows each and every operation on them is a
+/// plain single-table read or write, so an RPC layer would be ceremony.
 /// </summary>
 public sealed class SupabaseRpc
 {
@@ -19,6 +23,13 @@ public sealed class SupabaseRpc
     private static readonly JsonSerializerOptions JsonOpts = new()
     {
         PropertyNameCaseInsensitive = true
+    };
+
+    // Nulls in a PATCH body would blank the column rather than leave it be,
+    // which is never what a partial update means here.
+    private static readonly JsonSerializerOptions PatchOpts = new()
+    {
+        DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
     };
 
     public SupabaseRpc(HttpClient http, IOptions<OrchestratorOptions> opt, ILogger<SupabaseRpc> log)
@@ -83,6 +94,81 @@ public sealed class SupabaseRpc
             throw new HttpRequestException($"agent_hosts read -> {(int)res.StatusCode}: {text}");
 
         return JsonSerializer.Deserialize<List<AgentHostRow>>(text, JsonOpts) ?? new();
+    }
+
+    // ══════════════════════════════════════════════ generic table access ══
+
+    /// <summary>GET rest/v1/{table}?{query} - returns the raw array.</summary>
+    public async Task<JsonElement> SelectAsync(string table, string query, CancellationToken ct)
+    {
+        using var res = await _http.GetAsync($"rest/v1/{table}?{query}", ct);
+        var text = await res.Content.ReadAsStringAsync(ct);
+
+        if (!res.IsSuccessStatusCode)
+        {
+            _log.LogError("Select {Table} failed {Status}: {Body}", table, (int)res.StatusCode, text);
+            throw new HttpRequestException($"select {table} -> {(int)res.StatusCode}: {text}");
+        }
+
+        using var doc = JsonDocument.Parse(string.IsNullOrWhiteSpace(text) ? "[]" : text);
+        return doc.RootElement.Clone();
+    }
+
+    /// <summary>
+    /// POST rest/v1/{table}. Prefer: return=representation so the caller gets
+    /// the row back with its generated id rather than having to read again.
+    /// Accepts a single object or a list, for batch inserts.
+    /// </summary>
+    public async Task<JsonElement> InsertAsync(string table, object row, CancellationToken ct)
+    {
+        using var req = new HttpRequestMessage(HttpMethod.Post, $"rest/v1/{table}")
+        {
+            Content = new StringContent(
+                JsonSerializer.Serialize(row), Encoding.UTF8, "application/json")
+        };
+        req.Headers.Add("Prefer", "return=representation");
+
+        using var res = await _http.SendAsync(req, ct);
+        var text = await res.Content.ReadAsStringAsync(ct);
+
+        if (!res.IsSuccessStatusCode)
+        {
+            _log.LogError("Insert {Table} failed {Status}: {Body}", table, (int)res.StatusCode, text);
+            throw new HttpRequestException($"insert {table} -> {(int)res.StatusCode}: {text}");
+        }
+
+        using var doc = JsonDocument.Parse(string.IsNullOrWhiteSpace(text) ? "[]" : text);
+        var root = doc.RootElement;
+
+        return (root.ValueKind == JsonValueKind.Array && root.GetArrayLength() > 0
+            ? root[0]
+            : root).Clone();
+    }
+
+    /// <summary>
+    /// PATCH rest/v1/{table}?{filter}. The filter is not optional: PostgREST
+    /// applies an unfiltered PATCH to every row in the table.
+    /// </summary>
+    public async Task PatchAsync(string table, string filter, object patch, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(filter))
+            throw new ArgumentException(
+                "A filter is required - an unfiltered PATCH rewrites the whole table.", nameof(filter));
+
+        using var req = new HttpRequestMessage(HttpMethod.Patch, $"rest/v1/{table}?{filter}")
+        {
+            Content = new StringContent(
+                JsonSerializer.Serialize(patch, PatchOpts), Encoding.UTF8, "application/json")
+        };
+
+        using var res = await _http.SendAsync(req, ct);
+
+        if (!res.IsSuccessStatusCode)
+        {
+            var text = await res.Content.ReadAsStringAsync(ct);
+            _log.LogError("Patch {Table} failed {Status}: {Body}", table, (int)res.StatusCode, text);
+            throw new HttpRequestException($"patch {table} -> {(int)res.StatusCode}: {text}");
+        }
     }
 }
 

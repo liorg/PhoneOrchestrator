@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>הבודק · PhoneOrchestrator</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="bar">
+  <div class="bar__id">
+    <span class="dot" id="pulse" aria-hidden="true"></span>
+    <h1>Phone<em>Orchestrator</em></h1>
+  </div>
+  <nav class="nav">
+    <a href="/">שרתים</a>
+    <a href="/canary.html">בדיקות</a>
+    <a href="/provision.html" aria-current="page">הבודק</a>
+  </nav>
+  <button class="bar__out" id="logout">יציאה</button>
+</header>
+
+<p class="banner" id="banner" hidden></p>
+
+<main class="view">
+
+  <div class="view__head"><h2>הטלפון הבודק</h2></div>
+
+  <div class="hostbar" id="active">
+    <p class="empty">טוען…</p>
+  </div>
+
+  <!-- ------------------------------------------------------- scenarios -->
+  <div class="view__head"><h2>תרחישי לחיצת יד</h2></div>
+
+  <div class="cards">
+    <div class="card">
+      <h3>SENDCHECKHEALTH</h3>
+      <p class="card__note">
+        eventType <b>scheduler</b> — רץ על הבודק עצמו ופותח את הבדיקה.
+      </p>
+      <div id="sendState" class="card__state">—</div>
+      <label class="upload">
+        <input type="file" id="sendFile" accept="application/json,.json" hidden>
+        <span>העלה JSON</span>
+      </label>
+    </div>
+
+    <div class="card">
+      <h3>CHECKHEALTH</h3>
+      <p class="card__note">
+        eventType <b>trigger</b> — נכתב על כל טלפון נבדק ומגיב ללחיצת היד.
+      </p>
+      <div id="checkState" class="card__state">—</div>
+      <label class="upload">
+        <input type="file" id="checkFile" accept="application/json,.json" hidden>
+        <span>העלה JSON</span>
+      </label>
+    </div>
+  </div>
+
+  <!-- ----------------------------------------------------- registration -->
+  <div class="view__head"><h2>רישום בודק חדש</h2></div>
+
+  <div class="hostbar">
+    <p class="card__note">
+      רישום בודק חדש מנתק אוטומטית את הקודם. לא יכולים להיות שניים ב-CONNECT:
+      כל אחד היה רושם webhook משלו, וכל הודעה נכנסת הייתה מגיעה לשניהם.
+    </p>
+
+    <div class="form">
+      <label class="login__field">
+        <span>מספר טלפון</span>
+        <input id="newNumber" type="text" placeholder="972546252491" spellcheck="false">
+      </label>
+      <label class="login__field">
+        <span>uid (LID)</span>
+        <input id="newUid" type="text" placeholder="46037871886515" spellcheck="false">
+      </label>
+      <label class="login__field">
+        <span>אימוג׳י זיהוי</span>
+        <input id="newIdent" type="text" placeholder="🩺">
+      </label>
+      <button class="login__go" id="create">רשום בודק</button>
+    </div>
+  </div>
+
+  <!-- --------------------------------------------------------- history -->
+  <div class="view__head"><h2>היסטוריה</h2></div>
+  <div id="history"><p class="empty">טוען…</p></div>
+
+</main>
+
+<script src="provision.js"></script>
+</body>
+</html>

@@ -1,6 +1,8 @@
 using PhoneOrchestrator.Models;
 using PhoneOrchestrator.Services;
 using Microsoft.AspNetCore.HttpOverrides;
+using StackExchange.Redis;
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Swarm mounts secrets as files. A file wins over the env var so the
@@ -23,6 +25,29 @@ builder.Services.AddSingleton<AuthTokens>();
 builder.Services.AddHttpClient<SupabaseRpc>();
 builder.Services.AddHttpClient<HostProbe>();
 builder.Services.AddHostedService<OrchestratorLoop>();
+
+// ── canary ───────────────────────────────────────────────────────────
+// Redis is optional by design: without it the canary loses its sub-event
+// trail but still produces verdicts, so an outage degrades diagnostics
+// rather than stopping health checks.
+var redisUrl = builder.Configuration["Orchestrator:RedisUrl"];
+if (!string.IsNullOrWhiteSpace(redisUrl))
+{
+    builder.Services.AddSingleton<IConnectionMultiplexer>(_ =>
+    {
+        var cfg = ConfigurationOptions.Parse(redisUrl);
+        cfg.AbortOnConnectFail = false;   // keep retrying instead of throwing at startup
+        cfg.ConnectRetry       = 3;
+        cfg.ConnectTimeout     = 5000;
+        return ConnectionMultiplexer.Connect(cfg);
+    });
+}
+
+builder.Services.AddSingleton<CanaryStore>();
+builder.Services.AddHttpClient<CanaryRelay>();
+builder.Services.AddHostedService<CanaryLoop>();
+
+
 builder.Services.AddControllers();
 
 var app = builder.Build();

@@ -56,4 +56,32 @@ public sealed class OrchestratorOptions
     /// Ships false on purpose - flip it once you trust the dashboard.
     /// </summary>
     public bool AutoDrain { get; set; } = false;
+
+    // ════════════════════════════════════════════════════════════════════════
+//  Add to OrchestratorOptions.
+// ════════════════════════════════════════════════════════════════════════
+
+    /// <summary>Redis for the sub-event trail. Empty disables the trail.</summary>
+    public string RedisUrl { get; set; } = "";
+
+    /// <summary>
+    /// The prober's FastAPI wrapper. Port 8000, not 3001 - Baileys binds to
+    /// localhost inside the container and cannot be reached over the network.
+    /// </summary>
+    public string CanaryWaUrl { get; set; } = "";
+
+    /// <summary>The prober's dedicated Worker, for the init call.</summary>
+    public string CanaryWorkerUrl { get; set; } = "";
+
+    /// <summary>
+    /// Where the prober's container should post its events. Read by
+    /// whatsapp-canary, so it must be a service name rather than localhost.
+    /// </summary>
+    public string CanaryWebhookUrl { get; set; } = "";
+
+    /// <summary>
+    /// Master switch for the canary sweep. Ships false: the services come up
+    /// and connect, but no message reaches a customer phone until this is on.
+    /// </summary>
+    public bool CanaryEnabled { get; set; } = false;
 }

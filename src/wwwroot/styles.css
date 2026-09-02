@@ -345,3 +345,120 @@ html, body {
   letter-spacing: .08em; padding: 4px 10px; cursor: pointer;
 }
 .bar__out:hover { color: var(--paper); border-color: var(--dim); }
+
+
+/* ════════════════════════════════════════════════════════════════════════
+   Append to styles.css - navigation, filters, cards, upload, trail.
+   ════════════════════════════════════════════════════════════════════════ */
+
+/* ------------------------------------------------------------------- nav */
+
+.nav { display: flex; gap: 4px; margin-inline-start: auto; }
+.nav a {
+  font-family: var(--mono); font-size: 12px; letter-spacing: .04em;
+  color: var(--muted); text-decoration: none;
+  padding: 5px 12px; border: 1px solid transparent; border-radius: 2px;
+}
+.nav a:hover { color: var(--paper); border-color: var(--rule); }
+.nav a[aria-current="page"] { color: var(--ok); border-color: var(--ok); }
+
+/* --------------------------------------------------------------- filters */
+
+.filters {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+.filters label {
+  font-family: var(--mono); font-size: 12px; color: var(--muted);
+  display: flex; align-items: center; gap: 6px;
+}
+.filters input[type="date"] {
+  background: var(--panel); border: 1px solid var(--rule); border-radius: 2px;
+  color: var(--paper); font-family: var(--mono); font-size: 12px;
+  padding: 5px 8px; color-scheme: dark;
+}
+.hint { font-family: var(--mono); font-size: 11px; color: var(--dim); }
+
+.chip {
+  font-family: var(--mono); font-size: 12px;
+  background: transparent; color: var(--muted);
+  border: 1px solid var(--rule); border-radius: 2px;
+  padding: 4px 12px; cursor: pointer;
+}
+.chip:hover { color: var(--paper); border-color: var(--dim); }
+.chip[aria-current="true"] { color: var(--ok); border-color: var(--ok); }
+
+/* Rows that drill down. The cursor is the only affordance a dense table
+   has room for, so the hover tint has to carry the rest. */
+.tbl tr.click { cursor: pointer; }
+.tbl tr.click:hover td { background: var(--raise); }
+
+.ok-t  { color: var(--ok); }
+.bad-t { color: var(--bad); }
+.big   { font-size: 16px; }
+
+/* ----------------------------------------------------------------- cards */
+
+.cards {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 14px; margin-bottom: 26px;
+}
+.card {
+  background: var(--panel); border: 1px solid var(--rule);
+  border-radius: 4px; padding: 16px;
+  display: grid; gap: 10px; align-content: start;
+}
+.card h3 {
+  margin: 0; font-family: var(--mono); font-size: 13px;
+  letter-spacing: .06em; font-weight: 600;
+}
+.card__note { margin: 0; font-size: 12px; color: var(--muted); line-height: 1.6; }
+.card__note b { color: var(--paper); font-weight: 500; font-family: var(--mono); }
+.card__state { }
+
+.upload {
+  display: inline-block; cursor: pointer;
+  border: 1px dashed var(--rule); border-radius: 2px;
+  padding: 9px; text-align: center;
+  font-family: var(--mono); font-size: 12px; color: var(--muted);
+}
+.upload:hover { border-color: var(--ok); color: var(--ok); }
+.upload input { position: absolute; opacity: 0; pointer-events: none; }
+
+/* ------------------------------------------------------------------ form */
+
+.form { display: grid; gap: 12px; max-width: 340px; }
+.row { display: flex; gap: 8px; }
+
+/* ----------------------------------------------------------------- trail */
+
+/* The sub-event trail. A rule down the left with dots on it reads as a
+   sequence without needing timestamps to be parsed. */
+.trail {
+  list-style: none; margin: 0; padding: 0 22px 0 0;
+  border-inline-start: 1px solid var(--rule);
+}
+.trail li {
+  position: relative; padding: 0 18px 18px 0; margin-inline-start: -1px;
+  border-inline-start: 1px solid var(--rule);
+}
+.trail li::before {
+  content: ''; position: absolute; inset-inline-start: -4px; top: 5px;
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--ok);
+}
+.trail__when {
+  font-family: var(--mono); font-size: 11px; color: var(--dim);
+  margin-inline-end: 10px; direction: ltr;
+}
+.trail__kind {
+  font-family: var(--mono); font-size: 12px; color: var(--paper);
+  letter-spacing: .04em;
+}
+.trail__detail {
+  margin: 8px 0 0; padding: 10px;
+  background: var(--panel); border: 1px solid var(--rule); border-radius: 3px;
+  font-family: var(--mono); font-size: 11px; color: var(--muted);
+  direction: ltr; text-align: start;
+  overflow-x: auto; white-space: pre; max-height: 240px;
+}
