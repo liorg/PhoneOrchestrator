@@ -84,10 +84,36 @@ public sealed class CanaryStore
     public bool WorkerAlive(TimeSpan within) =>
         _workers.Values.Any(w => DateTime.UtcNow - w.SeenUtc < within);
 
-    public Task RecordProberStateAsync(string state, string? number, CancellationToken ct)
+    /// <summary>
+    /// Connection state of the prober's container.
+    ///
+    /// On authentication the number and LID are also written back to the
+    /// heartbeatphones row: neither is knowable when the prober is registered
+    /// by hand - WhatsApp assigns the LID - so the row is completed here
+    /// rather than left half-filled.
+    /// </summary>
+    public async Task RecordProberStateAsync(
+        string state, string? number, string? uid, CancellationToken ct)
     {
         Prober = new ProberState(state, number, DateTime.UtcNow);
-        return Task.CompletedTask;
+
+        if (state != "authenticated") return;
+        if (string.IsNullOrWhiteSpace(number) && string.IsNullOrWhiteSpace(uid)) return;
+
+        try
+        {
+            var patch = new Dictionary<string, object?> { ["updated_at"] = DateTime.UtcNow };
+            if (!string.IsNullOrWhiteSpace(number)) patch["phone_number"] = number.TrimStart('+');
+            if (!string.IsNullOrWhiteSpace(uid))    patch["uid"]          = uid;
+
+            await _rpc.PatchAsync("heartbeatphones", "status=eq.CONNECT", patch, ct);
+
+            _log.LogWarning("[CANARY] Prober row completed | number={Number} uid={Uid}", number, uid);
+        }
+        catch (Exception ex)
+        {
+            _log.LogError(ex, "[CANARY] Could not write prober identity");
+        }
     }
 
     /// <summary>

@@ -375,9 +375,17 @@ public sealed class CanaryLoop : BackgroundService
     }
 
     /// <summary>
-    /// Writes CHECKHEALTH onto the target phone when it is missing or the
-    /// prober's copy has changed since. Marked is_system so the Designer
-    /// leaves it alone and so it is safe to overwrite.
+    /// Writes CHECKHEALTH onto the target phone when it is missing, and
+    /// rewrites it only when the prober's copy actually changed.
+    ///
+    /// The comparison is a hash of the scenario itself rather than a
+    /// timestamp: heartbeatphones.updated_at moves for unrelated reasons -
+    /// the uid arriving on authentication, an edited identification emoji -
+    /// and each of those would otherwise rewrite the scenario on every phone
+    /// in the fleet.
+    ///
+    /// Marked is_system so the Designer leaves it alone and so overwriting
+    /// it is safe.
     /// </summary>
     private async Task<bool> EnsureCheckScenarioAsync(
         SupabaseRpc rpc, Prober prober, Target t, CancellationToken ct)
@@ -386,48 +394,43 @@ public sealed class CanaryLoop : BackgroundService
 
         try
         {
-            var existing = await rpc.SelectAsync("scenarios",
-                $"select=id,created_at&phone_id=eq.{t.PhoneId}&is_system=is.true&name=eq.CHECKHEALTH&limit=1", ct);
+            var source = prober.CheckScenario.Value.GetRawText();
+            var hash   = Sha256(source);
 
-            var config = BuildDbConfig(prober.CheckScenario.Value);
+            var existing = await rpc.SelectAsync("scenarios",
+                $"select=id,system_hash&phone_id=eq.{t.PhoneId}&is_system=is.true&name=eq.CHECKHEALTH&limit=1", ct);
 
             foreach (var row in existing.EnumerateArray())
             {
                 if (!row.TryGetProperty("id", out var idEl)) continue;
 
-                // Only rewrite when the prober's copy is newer, so a stable
-                // fleet is not rewritten on every single sweep.
-                var stale = prober.UpdatedAt.HasValue
-                    && row.TryGetProperty("created_at", out var cEl)
-                    && DateTime.TryParse(cEl.GetString(), out var created)
-                    && prober.UpdatedAt.Value > created;
+                var current = row.TryGetProperty("system_hash", out var h) ? h.GetString() : null;
+                if (current == hash) return true;   // unchanged, nothing to do
 
-                if (stale)
+                await rpc.PatchAsync("scenarios", $"id=eq.{idEl.GetString()}", new
                 {
-                    await rpc.PatchAsync("scenarios", $"id=eq.{idEl.GetString()}", new
-                    {
-                        config,
-                        contact_id = t.ContactId,
-                        status     = "active",
-                        event_type = "trigger"
-                    }, ct);
+                    config      = BuildDbConfig(prober.CheckScenario.Value),
+                    contact_id  = t.ContactId,
+                    status      = "active",
+                    event_type  = "trigger",
+                    system_hash = hash
+                }, ct);
 
-                    _log.LogInformation("[CANARY] Refreshed CHECKHEALTH on {Phone}", t.PhoneNumber);
-                }
-
+                _log.LogWarning("[CANARY] CHECKHEALTH changed - rewritten on {Phone}", t.PhoneNumber);
                 return true;
             }
 
             await rpc.InsertAsync("scenarios", new
             {
-                phone_id   = t.PhoneId,
-                contact_id = t.ContactId,
-                name       = "CHECKHEALTH",
-                status     = "active",
-                event_type = "trigger",
-                priority   = 1,
-                is_system  = true,
-                config
+                phone_id    = t.PhoneId,
+                contact_id  = t.ContactId,
+                name        = "CHECKHEALTH",
+                status      = "active",
+                event_type  = "trigger",
+                priority    = 1,
+                is_system   = true,
+                system_hash = hash,
+                config      = BuildDbConfig(prober.CheckScenario.Value)
             }, ct);
 
             _log.LogWarning("[CANARY] Created CHECKHEALTH on {Phone}", t.PhoneNumber);
@@ -439,6 +442,11 @@ public sealed class CanaryLoop : BackgroundService
             return false;
         }
     }
+
+    private static string Sha256(string s) =>
+        Convert.ToHexString(
+            System.Security.Cryptography.SHA256.HashData(
+                System.Text.Encoding.UTF8.GetBytes(s)))[..32];
 
     /// <summary>
     /// The Designer exports camelCase; the scenarios table stores snake_case

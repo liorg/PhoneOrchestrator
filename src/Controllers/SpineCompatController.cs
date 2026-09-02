@@ -255,19 +255,26 @@ public sealed class SpineCompatController : ControllerBase
         switch (body.Event)
         {
             case "authenticated":
-                _log.LogWarning("[CANARY] Prober authenticated as {Phone}", body.Phone);
-                await _store.RecordProberStateAsync("authenticated", body.Phone, ct);
+                // The LID is the prober's real identity and is only knowable
+                // once WhatsApp has assigned it, which is now.
+                string? lid = null;
+                if (body.Data is { } d && d.ValueKind == JsonValueKind.Object
+                    && d.TryGetProperty("lid", out var lidEl))
+                    lid = lidEl.GetString()?.Split('@')[0];
+
+                _log.LogWarning("[CANARY] Prober authenticated as {Phone} lid={Lid}", body.Phone, lid);
+                await _store.RecordProberStateAsync("authenticated", body.Phone, lid, ct);
                 break;
 
             case "disconnected":
                 _log.LogError("[CANARY] Prober disconnected - checks will fail until it returns");
-                await _store.RecordProberStateAsync("disconnected", null, ct);
+                await _store.RecordProberStateAsync("disconnected", null, null, ct);
                 break;
 
             case "qr":
             case "pairing_code":
                 _log.LogWarning("[CANARY] Prober waiting to be paired ({Event})", body.Event);
-                await _store.RecordProberStateAsync("pairing", null, ct);
+                await _store.RecordProberStateAsync("pairing", null, null, ct);
                 break;
 
             case "message":

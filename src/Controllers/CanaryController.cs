@@ -232,4 +232,64 @@ public sealed class CanaryController : ControllerBase
 
         return Ok(new { ok = true, column, steps = canvas.GetArrayLength() });
     }
+
+    // ═══════════════════════════════════════════════════ announcement ══
+
+    /// <summary>
+    /// Sends the prober's identification emoji to every active phone.
+    ///
+    /// This is what bootstraps the whole thing. WhatsAppDockerManager watches
+    /// for that emoji on the target side and creates the contact that links
+    /// the phone to this prober - and the canary sweeps that contact list.
+    /// Until this runs at least once there is nothing to sweep, and the loop
+    /// reports "no contacts yet" forever.
+    ///
+    /// Safe to run repeatedly: an existing contact is promoted rather than
+    /// duplicated, so this is also how you recover after switching probers.
+    /// </summary>
+    [HttpPost("prober/{id:guid}/announce")]
+    public async Task<IActionResult> Announce(
+        Guid id, [FromServices] CanaryRelay relay, CancellationToken ct = default)
+    {
+        var probers = await _rpc.SelectAsync("heartbeatphones", $"select=*&id=eq.{id}&limit=1", ct);
+
+        string? emoji = null, status = null;
+        foreach (var p in probers.EnumerateArray())
+        {
+            emoji  = p.TryGetProperty("identification_type", out var e) ? e.GetString() : null;
+            status = p.TryGetProperty("status", out var st) ? st.GetString() : null;
+        }
+
+        if (string.IsNullOrWhiteSpace(emoji))
+            return BadRequest(new { ok = false, error = "This prober has no identification_type" });
+
+        if (!string.Equals(status, "CONNECT", StringComparison.OrdinalIgnoreCase))
+            return BadRequest(new { ok = false, error = "Only the CONNECT prober can announce itself" });
+
+        var phones = await _rpc.SelectAsync("phones",
+            "select=id,number&status=eq.active&order=number", ct);
+
+        var sent = 0;
+        var failed = new List<object>();
+
+        foreach (var ph in phones.EnumerateArray())
+        {
+            var number = ph.TryGetProperty("number", out var n) ? n.GetString() : null;
+            if (string.IsNullOrWhiteSpace(number)) continue;
+
+            var (ok, _, error) = await relay.SendTextAsync(number, emoji!, ct);
+
+            if (ok) sent++;
+            else failed.Add(new { number, error });
+
+            // WhatsApp rate-limits bursts, and a burst to the whole fleet is
+            // exactly the shape that triggers it.
+            await Task.Delay(1500, ct);
+        }
+
+        _log.LogWarning("[CANARY] Announcement sent to {Sent} phones, {Failed} failed",
+            sent, failed.Count);
+
+        return Ok(new { ok = true, sent, failed });
+    }
 }
