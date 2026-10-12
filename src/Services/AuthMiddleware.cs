@@ -61,7 +61,10 @@ public sealed class AuthMiddleware
 
         var path = ctx.Request.Path.Value ?? "";
 
-        if (Open.Any(p => path.Equals(p, StringComparison.OrdinalIgnoreCase)))
+        // The prober's callbacks carry no credentials. CanaryController
+        // checks the path token itself and answers 404 without it.
+        if (Open.Any(p => path.Equals(p, StringComparison.OrdinalIgnoreCase))
+            || path.StartsWith("/canary/", StringComparison.OrdinalIgnoreCase))
         {
             await _next(ctx);
             return;

@@ -42,6 +42,12 @@ services:
       # Ships observing. Flip to "true" once the dashboard looks right.
       Orchestrator__AutoDrain:           "false"
 
+      # ── canary ──────────────────────────────────────────────────────
+      # The runner is on botinbound (same image, Mode=canary). Here: the
+      # dashboard only, which reads/writes canary_control in the DB.
+      Orchestrator__Mode:                full
+      Orchestrator__CanaryEnabled:       "false"
+
     ports:
       - target: 8080
         published: 8090

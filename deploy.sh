@@ -45,9 +45,9 @@ SUPABASE_URL="$SUPABASE_URL" \
 SUPABASE_KEY="$SUPABASE_KEY" \
 AUTH_USER="${AUTH_USER:-admin}" \
 AUTH_PASSWORD="${AUTH_PASSWORD:-}" \
-CANARY_PHONE_ID="${CANARY_PHONE_ID:-}" \
 docker stack deploy \
   --with-registry-auth \
+  --prune \
   -c docker-compose.yml \
   "$STACK"
 

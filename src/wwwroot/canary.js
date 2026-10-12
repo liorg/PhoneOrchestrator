@@ -1,4 +1,4 @@
-/* Canary report: runs → checks → events. Three levels, each its own screen. */
+/* Canary report: runs → checks. The check row carries everything - code, delivery, ACK, error. */
 
 const state = {
   view: 'runs',
@@ -6,7 +6,6 @@ const state = {
   checkPage: 1,
   runId: null,
   runRow: null,
-  checkId: null,
   status: ''
 };
 
@@ -39,7 +38,7 @@ const clearFail = () => { $('banner').hidden = true; };
 
 function runRow(r) {
   const pct  = r.pass_pct == null ? '—' : r.pass_pct + '%';
-  const tone = r.failed > 0 ? 'bad' : (r.status === 'running' ? 'warn' : 'ok');
+  const tone = (r.failed > 0 || r.status === 'aborted') ? 'bad' : (r.status === 'running' ? 'warn' : 'ok');
 
   return `<tr class="click" data-id="${esc(r.id)}">
     <td>${when(r.started_at)}</td>
@@ -92,15 +91,14 @@ async function loadRuns() {
 
 function checkRow(c) {
   const tone = c.status === 'passed' ? 'ok'
-             : (c.status === 'skipped' ? 'warn' : 'bad');
+             : (c.status === 'skipped' || c.status === 'late_ack' ? 'warn' : 'bad');
 
-  return `<tr class="click" data-id="${esc(c.id)}">
+  return `<tr>
     <td>${cell(c.phone_number)}</td>
     <td><span class="tag tag--${tone}">${esc(c.status)}</span></td>
-    <td>${c.scenario_ok === false ? '<span class="bad-t">חסר</span>'
-        : (c.scenario_ok ? '<span class="ok-t">✓</span>' : '<span class="nil">—</span>')}</td>
+    <td><code>${cell(c.check_code)}</code></td>
+    <td>${({1: 'נשלח', 2: 'נמסר', 3: 'נקרא', 4: 'נקרא', '-1': 'נדחה'})[c.delivery_status] || '<span class="nil">—</span>'}</td>
     <td class="num">${c.latency_ms == null ? '—' : c.latency_ms + 'ms'}</td>
-    <td class="num">${c.event_count}</td>
     <td>${c.notified ? '<span class="ok-t">✓</span>' : '<span class="nil">—</span>'}</td>
     <td>${c.error ? `<span class="bad-t">${esc(c.error)}</span>` : '<span class="nil">—</span>'}</td>
   </tr>`;
@@ -117,8 +115,8 @@ async function loadChecks() {
     $('checks').innerHTML = d.items.length ? `
       <div class="wrap"><table class="tbl">
         <thead><tr>
-          <th>טלפון</th><th>status</th><th>תרחיש</th>
-          <th>זמן תגובה</th><th>אירועים</th><th>הותרע</th><th>שגיאה</th>
+          <th>טלפון</th><th>status</th><th>CHECK ID</th><th>מסירה</th>
+          <th>זמן ACK</th><th>הותרע</th><th>שגיאה</th>
         </tr></thead>
         <tbody>${d.items.map(checkRow).join('')}</tbody>
       </table></div>`
@@ -128,46 +126,9 @@ async function loadChecks() {
       state.checkPage = n; loadChecks();
     });
 
-    document.querySelectorAll('#checks .click').forEach((el) => {
-      el.addEventListener('click', () => openEvents(el.dataset.id));
-    });
-
     clearFail();
   } catch (e) {
     if (e.message !== 'unauthenticated') fail('טעינת הבדיקות נכשלה: ' + e.message);
-  }
-}
-
-/* ---------------------------------------------------------------- events */
-
-async function loadEvents() {
-  if (!state.checkId) return;
-  try {
-    const d = await get(`/api/canary/checks/${state.checkId}/events`);
-
-    if (!d.ok) { fail('הבדיקה לא נמצאה.'); return; }
-
-    const c = d.check;
-    $('checkbar').innerHTML = `
-      <div class="hostbar__top">
-        <span class="hostbar__name">${esc(c.phone_number || c.phone_id)}</span>
-        <span class="tag tag--${c.status === 'passed' ? 'ok' : 'bad'}">${esc(c.status)}</span>
-        ${c.latency_ms != null ? `<span class="host__ip">${c.latency_ms}ms</span>` : ''}
-      </div>
-      ${c.error ? `<div class="host__err">${esc(c.error)}</div>` : ''}`;
-
-    $('events').innerHTML = d.events.length ? `
-      <ol class="trail">${d.events.map((e) => `
-        <li>
-          <span class="trail__when">${when(e.created_at)}</span>
-          <span class="trail__kind">${esc(e.kind)}</span>
-          ${e.detail ? `<pre class="trail__detail">${esc(JSON.stringify(e.detail, null, 2))}</pre>` : ''}
-        </li>`).join('')}</ol>`
-      : '<p class="empty">אין תת-אירועים.</p>';
-
-    clearFail();
-  } catch (e) {
-    if (e.message !== 'unauthenticated') fail('טעינת האירועים נכשלה: ' + e.message);
   }
 }
 
@@ -175,7 +136,7 @@ async function loadEvents() {
 
 function show(view) {
   state.view = view;
-  ['runs', 'checks', 'events'].forEach((v) => {
+  ['runs', 'checks'].forEach((v) => {
     $('view-' + v).hidden = v !== view;
   });
   window.scrollTo(0, 0);
@@ -203,13 +164,6 @@ function openChecks(row) {
   loadChecks();
 }
 
-function openEvents(checkId) {
-  state.checkId = checkId;
-  show('events');
-  $('events').innerHTML = '<p class="empty">טוען…</p>';
-  loadEvents();
-}
-
 /* ---------------------------------------------------------------- paging */
 
 function pager(elId, page, pages, total, onGo) {
@@ -225,11 +179,82 @@ function pager(elId, page, pages, total, onGo) {
   el.querySelector('[data-go="next"]').onclick = () => onGo(page + 1);
 }
 
+/* --------------------------------------------------------------- control */
+
+const MODE = {
+  disabled: 'כבוי', outside_hours: 'מחוץ לשעות', scheduled: 'מתוזמן',
+  running: 'סבב רץ', running_manual: 'סבב ידני רץ', starting: 'עולה'
+};
+
+async function send(method, url, body) {
+  const res = await fetch(url, {
+    method, headers: { 'Content-Type': 'application/json' },
+    body: body ? JSON.stringify(body) : undefined
+  });
+  if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
+  return res.json();
+}
+
+const hhmm = (t) => (t ? String(t).slice(0, 5) : '');
+
+async function loadControl() {
+  try {
+    const { control: c, runnerAlive } = await get('/api/canary/control');
+    const prober = c.prober_ready === true ? ['ok', 'מוכן']
+                 : (c.prober_ready === false ? ['bad', 'לא מוכן'] : ['warn', 'לא נבדק']);
+    const runner = runnerAlive ? ['ok', MODE[c.runner_mode] || c.runner_mode] : ['bad', 'runner לא עונה'];
+
+    $('proberbar').innerHTML = `
+      <div class="hostbar__top">
+        <span class="hostbar__name">Canary</span>
+        <span class="tag tag--${c.enabled ? 'ok' : 'warn'}">${c.enabled ? 'פעיל' : 'כבוי'}</span>
+        <span class="tag tag--${runner[0]}">${esc(runner[1])}</span>
+        <span class="tag tag--${prober[0]}">בודק: ${prober[1]}</span>
+        ${c.prober_reason ? `<span class="bad-t">${esc(c.prober_reason)}</span>` : ''}
+      </div>
+      <div class="filters">
+        <label>כל <input type="number" id="cInterval" min="60" step="60" value="${c.interval_sec}"> שנ׳</label>
+        <label>timeout <input type="number" id="cTimeout" min="15" value="${c.timeout_sec}"> שנ׳</label>
+        <label>משעה <input type="time" id="cFrom" value="${hhmm(c.active_from)}"></label>
+        <label>עד <input type="time" id="cTo" value="${hhmm(c.active_to)}"></label>
+        <button class="back" id="cSave">שמור</button>
+        <button class="back" id="cToggle">${c.enabled ? 'עצור' : 'הפעל'}</button>
+        <button class="back" id="cRun" ${c.run_now_at ? 'disabled' : ''}>${c.run_now_at ? 'ממתין…' : 'הרץ סבב עכשיו'}</button>
+      </div>
+      <div class="hint">
+        ${c.last_sweep_at ? 'אחרון: ' + when(c.last_sweep_at) : ''}
+        ${c.last_result ? ' · ' + esc(c.last_result) : ''}
+        ${c.enabled && c.next_sweep_at ? ' · הבא: ' + when(c.next_sweep_at) : ''}
+        ${c.runner_version ? ' · ' + esc(c.runner_version) : ''}
+      </div>`;
+
+    $('cToggle').onclick = async () => {
+      try { await send('PATCH', '/api/canary/control', { enabled: !c.enabled }); } catch (e) { fail(e.message); }
+      loadControl();
+    };
+    $('cSave').onclick = async () => {
+      try {
+        await send('PATCH', '/api/canary/control', {
+          intervalSec: +$('cInterval').value, timeoutSec: +$('cTimeout').value,
+          activeFrom: $('cFrom').value, activeTo: $('cTo').value
+        });
+        clearFail();
+      } catch (e) { fail('שמירה נכשלה: ' + e.message); }
+      loadControl();
+    };
+    $('cRun').onclick = async () => {
+      try { await send('POST', '/api/canary/run'); } catch (e) { fail(e.message); }
+      loadControl();
+    };
+  } catch (e) {
+    if (e.message !== 'unauthenticated') $('proberbar').innerHTML = `<p class="bad-t">${esc(e.message)}</p>`;
+  }
+}
+
 /* ------------------------------------------------------------------ boot */
 
 $('apply').addEventListener('click', () => { state.runPage = 1; loadRuns(); });
 $('backRuns').addEventListener('click', () => show('runs'));
-$('backChecks').addEventListener('click', () => show('checks'));
 
 document.querySelectorAll('.chip').forEach((chip) => {
   chip.addEventListener('click', () => {
@@ -246,4 +271,6 @@ $('logout').addEventListener('click', async () => {
   location.href = '/login.html';
 });
 
+loadControl();
 loadRuns();
+setInterval(loadControl, 15000);

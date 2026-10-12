@@ -16,7 +16,6 @@
   <nav class="nav">
     <a href="/">שרתים</a>
     <a href="/canary.html" aria-current="page">בדיקות</a>
-    <a href="/provision.html">הבודק</a>
   </nav>
   <button class="bar__out" id="logout">יציאה</button>
 </header>
@@ -25,6 +24,8 @@
 
 <!-- ----------------------------------------------------------- runs view -->
 <main class="view" id="view-runs">
+  <div class="hostbar" id="proberbar"><p class="empty">טוען מצב הבודק…</p></div>
+
   <div class="view__head">
     <h2>סבבי בדיקה</h2>
     <div class="pager" id="runPager"></div>
@@ -53,19 +54,11 @@
     <button class="chip" data-status=""        aria-current="true">הכל</button>
     <button class="chip" data-status="failed">נכשל</button>
     <button class="chip" data-status="timeout">timeout</button>
+    <button class="chip" data-status="skipped">דולג</button>
     <button class="chip" data-status="passed">עבר</button>
   </div>
 
   <div id="checks"><p class="empty">טוען…</p></div>
-</main>
-
-<!-- --------------------------------------------------------- events view -->
-<main class="view" id="view-events" hidden>
-  <div class="view__head">
-    <button class="back" id="backChecks">חזרה לבדיקות</button>
-  </div>
-  <div class="hostbar" id="checkbar"></div>
-  <div id="events"><p class="empty">טוען…</p></div>
 </main>
 
 <script src="canary.js"></script>

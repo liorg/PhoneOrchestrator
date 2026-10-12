@@ -1,4 +1,3 @@
-using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.Extensions.Options;
 using PhoneOrchestrator.Models;
@@ -6,23 +5,18 @@ using PhoneOrchestrator.Models;
 namespace PhoneOrchestrator.Services;
 
 /// <summary>
-/// The only component that starts a canary sweep.
+/// The canary sweep, v2.
 ///
-/// Everything else in the canary is reactive - the Worker posts telemetry,
-/// the container posts events, the controller records them. This is what sets
-/// the whole thing in motion, on a timer.
+///   1. prober /health - NATS connected, token valid. Otherwise no sweep:
+///      a deaf prober would fail every phone and alert every customer.
+///   2. webhook on the prober points at /canary/inbound/{token}
+///   3. every phones.status = 'active' gets the CHECK template with a fresh
+///      code; Cloud API targets are skipped (business→business is unproven)
+///   4. wait timeout_sec after the last send, then timeout what never ACKed
+///   5. close the run; notify only on state change (down / recovered)
 ///
-/// One sweep:
-///   1. find the prober in CONNECT, and its two handshake scenarios
-///   2. make sure exactly one webhook is registered on its container
-///   3. write CHECKHEALTH onto every monitored phone that lacks it
-///   4. open a run, and init the Worker once per monitored phone
-///   5. wait, expire whatever never answered, close the run
-///   6. notify the customer about failures
-///
-/// The verdicts arrive asynchronously through SpineCompatController, so this
-/// loop never waits on a reply directly - it opens the checks, sleeps, and
-/// then reads what came back.
+/// The ACKs arrive on their own through CanaryController → CanaryStore while
+/// this loop sleeps in step 4.
 /// </summary>
 public sealed class CanaryLoop : BackgroundService
 {
@@ -32,10 +26,8 @@ public sealed class CanaryLoop : BackgroundService
     private readonly ILogger<CanaryLoop> _log;
 
     public CanaryLoop(
-        IServiceScopeFactory scopes,
-        CanaryStore store,
-        IOptions<OrchestratorOptions> opt,
-        ILogger<CanaryLoop> log)
+        IServiceScopeFactory scopes, CanaryStore store,
+        IOptions<OrchestratorOptions> opt, ILogger<CanaryLoop> log)
     {
         _scopes = scopes;
         _store  = store;
@@ -43,512 +35,474 @@ public sealed class CanaryLoop : BackgroundService
         _log    = log;
     }
 
+    private static readonly TimeSpan Tick = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// Everything is driven from the single row in canary_control:
+    ///   enabled = false        → no sweeps; the runner keeps reporting status
+    ///   interval_sec           → time between sweeps
+    ///   active_from/active_to  → optional daily window (in tz); outside it, no sweeps
+    ///   run_now_at             → set by the dashboard; runs once, even when
+    ///                            disabled or outside the window, then cleared
+    /// The row is re-read every 30s, so a change takes effect without a deploy.
+    /// </summary>
     protected override async Task ExecuteAsync(CancellationToken ct)
     {
         if (!_opt.CanaryEnabled)
         {
-            _log.LogWarning("[CANARY] Disabled - set Orchestrator__CanaryEnabled=true to start sweeping");
+            _log.LogInformation("[CANARY] Runner not on this instance (Orchestrator__CanaryEnabled=false)");
             return;
         }
 
-        _log.LogInformation("[CANARY] Loop starting | worker={Worker} wa={Wa}",
-            _opt.CanaryWorkerUrl, _opt.CanaryWaUrl);
+        if (string.IsNullOrWhiteSpace(_opt.CanaryInboundToken))
+        {
+            _log.LogError("[CANARY] Orchestrator__CanaryInboundToken is empty - refusing to start: " +
+                          "the inbound route would accept ACKs from anyone");
+            return;
+        }
 
-        // The prober's container needs time to authenticate before the first
-        // sweep, otherwise every check in it fails for a reason that has
-        // nothing to do with the phones being tested.
-        await Delay(TimeSpan.FromSeconds(60), ct);
+        _log.LogInformation("[CANARY] Runner starting | prober={Prober}", _opt.CanaryProberUrl);
+
+        // Let the prober finish /register with whqueue before judging it.
+        if (!await Delay(TimeSpan.FromSeconds(30), ct)) return;
+
+        DateTime nextDue = DateTime.UtcNow;
 
         while (!ct.IsCancellationRequested)
         {
-            var cfg = await LoadConfigAsync(ct);
+            var cfg = await LoadControlAsync(ct);
 
             try
             {
-                await SweepAsync(cfg, ct);
+                var now     = DateTime.UtcNow;
+                var manual  = cfg.RunNowAt.HasValue;
+                var inHours = InWindow(cfg, now);
+                var due     = cfg.Enabled && inHours && now >= nextDue;
+
+                _store.Mode = !cfg.Enabled ? "disabled" : (!inHours ? "outside_hours" : "scheduled");
+
+                if (manual || due)
+                {
+                    if (manual) await ClearRunNowAsync(ct);
+
+                    _store.Mode = manual ? "running_manual" : "running";
+                    await PublishStatusAsync(cfg, nextDue, ct);
+
+                    await SweepAsync(cfg, ct);
+                    _store.LastSweepUtc = DateTime.UtcNow;
+                    nextDue = DateTime.UtcNow.AddSeconds(cfg.IntervalSec);
+                    _store.Mode = cfg.Enabled ? "scheduled" : "disabled";
+                }
+                else
+                {
+                    // Between sweeps: keep the prober's health fresh for the dashboard.
+                    await RefreshHealthAsync(ct);
+                }
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { break; }
             catch (Exception ex)
             {
-                _log.LogError(ex, "[CANARY] Sweep failed");
+                _store.LastSweepResult = $"error: {ex.Message}";
+                _log.LogError(ex, "[CANARY] Tick failed");
+                nextDue = DateTime.UtcNow.AddSeconds(cfg.IntervalSec);
             }
 
-            if (!await Delay(TimeSpan.FromSeconds(cfg.IntervalSec), ct)) break;
+            await PublishStatusAsync(cfg, nextDue, ct);
+            if (!await Delay(Tick, ct)) break;
         }
     }
 
-    // ══════════════════════════════════════════════════════════ config ══
+    // ═════════════════════════════════════════════════════════ control ══
 
     private sealed record Cfg(
-        int IntervalSec, int TimeoutSec, bool AutoScenario, bool Notify, bool NotifyOnPass);
+        bool Enabled, int IntervalSec, int TimeoutSec, int SendGapMs,
+        string Template, string Language, bool CheckCloudApi, bool Notify,
+        TimeSpan? ActiveFrom, TimeSpan? ActiveTo, string TimeZone, DateTime? RunNowAt);
 
-    private async Task<Cfg> LoadConfigAsync(CancellationToken ct)
+    private static readonly Cfg Off = new(false, 900, 120, 1500, "check_id", "he", false, true,
+                                          null, null, "Asia/Jerusalem", null);
+
+    private async Task<Cfg> LoadControlAsync(CancellationToken ct)
+    {
+        try
+        {
+            using var scope = _scopes.CreateScope();
+            var rpc  = scope.ServiceProvider.GetRequiredService<SupabaseRpc>();
+            var rows = await rpc.SelectAsync("canary_control", "select=*&id=eq.1&limit=1", ct);
+
+            foreach (var r in rows.EnumerateArray())
+            {
+                bool   B(string k, bool d)   => r.TryGetProperty(k, out var v) && v.ValueKind is JsonValueKind.True or JsonValueKind.False ? v.GetBoolean() : d;
+                int    I(string k, int d)    => r.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.Number ? v.GetInt32() : d;
+                string S(string k, string d) => r.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(v.GetString()) ? v.GetString()! : d;
+                TimeSpan? T(string k) => r.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.String
+                                         && TimeSpan.TryParse(v.GetString(), out var t) ? t : null;
+                DateTime? D(string k) => r.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.String
+                                         && DateTime.TryParse(v.GetString(), null,
+                                              System.Globalization.DateTimeStyles.AdjustToUniversal, out var d) ? d : null;
+
+                return new Cfg(
+                    Enabled:       B("enabled", false),
+                    IntervalSec:   Math.Max(60, I("interval_sec", 900)),
+                    TimeoutSec:    Math.Max(15, I("timeout_sec", 120)),
+                    SendGapMs:     Math.Max(0,  I("send_gap_ms", 1500)),
+                    Template:      S("template_name", "check_id"),
+                    Language:      S("template_lang", "he"),
+                    CheckCloudApi: B("check_cloudapi", false),
+                    Notify:        B("notify", true),
+                    ActiveFrom:    T("active_from"),
+                    ActiveTo:      T("active_to"),
+                    TimeZone:      S("timezone", "Asia/Jerusalem"),
+                    RunNowAt:      D("run_now_at"));
+            }
+
+            _log.LogWarning("[CANARY] canary_control has no row id=1 - treating as disabled");
+        }
+        catch (Exception ex)
+        {
+            // Fail closed: an unreadable control row must not start messaging customers.
+            _log.LogWarning(ex, "[CANARY] Could not read canary_control - treating as disabled");
+        }
+        return Off;
+    }
+
+    /// <summary>Daily window in the configured zone. Handles windows past midnight (22:00-06:00).</summary>
+    private bool InWindow(Cfg cfg, DateTime utcNow)
+    {
+        if (cfg.ActiveFrom is not { } from || cfg.ActiveTo is not { } to) return true;
+
+        TimeZoneInfo tz;
+        try { tz = TimeZoneInfo.FindSystemTimeZoneById(cfg.TimeZone); }
+        catch { tz = TimeZoneInfo.Utc; _log.LogWarning("[CANARY] Unknown timezone {Tz}, using UTC", cfg.TimeZone); }
+
+        var local = TimeZoneInfo.ConvertTimeFromUtc(utcNow, tz).TimeOfDay;
+        return from <= to ? local >= from && local < to
+                          : local >= from || local < to;
+    }
+
+    private async Task ClearRunNowAsync(CancellationToken ct)
+    {
+        using var scope = _scopes.CreateScope();
+        var rpc = scope.ServiceProvider.GetRequiredService<SupabaseRpc>();
+        // JSON null, not omitted - PatchAsync drops nulls, so send an explicit dictionary.
+        await rpc.PatchRawAsync("canary_control", "id=eq.1", "{\"run_now_at\":null}", ct);
+    }
+
+    private async Task RefreshHealthAsync(CancellationToken ct)
+    {
+        using var scope = _scopes.CreateScope();
+        var prober = scope.ServiceProvider.GetRequiredService<CanaryProber>();
+        _store.Prober = await prober.HealthAsync(ct);
+        _store.ProberCheckedUtc = DateTime.UtcNow;
+    }
+
+    /// <summary>
+    /// The runner's view of itself, written to canary_control. The dashboard
+    /// on the other VM reads it from there - nothing calls the runner directly.
+    /// runner_seen_at older than a minute means the runner is down.
+    /// </summary>
+    private async Task PublishStatusAsync(Cfg cfg, DateTime nextDue, CancellationToken ct)
     {
         try
         {
             using var scope = _scopes.CreateScope();
             var rpc = scope.ServiceProvider.GetRequiredService<SupabaseRpc>();
+            var p = _store.Prober;
 
-            var rows = await rpc.SelectAsync("bot_config", "select=key,value&key=like.canary.*", ct);
-
-            var map = new Dictionary<string, string>();
-            foreach (var r in rows.EnumerateArray())
-                if (r.TryGetProperty("key", out var k) && r.TryGetProperty("value", out var v))
-                    map[k.GetString() ?? ""] = v.GetString() ?? "";
-
-            int I(string k, int d) => map.TryGetValue(k, out var s) && int.TryParse(s, out var n) ? n : d;
-            bool B(string k, bool d) => map.TryGetValue(k, out var s) ? s == "true" : d;
-
-            return new Cfg(
-                I("canary.interval_sec", 900),
-                I("canary.timeout_sec", 120),
-                B("canary.auto_scenario", true),
-                B("canary.notify", true),
-                B("canary.notify_on_pass", false));
+            await rpc.PatchAsync("canary_control", "id=eq.1", new
+            {
+                runner_seen_at  = DateTime.UtcNow,
+                runner_version  = $"{BuildInfo.Version}/{BuildInfo.Marker}",
+                runner_mode     = _store.Mode,
+                next_sweep_at   = cfg.Enabled ? nextDue : (DateTime?)null,
+                last_sweep_at   = _store.LastSweepUtc,
+                last_result     = _store.LastSweepResult,
+                prober_ready    = p?.Ready,
+                prober_reason   = p?.Reason ?? (p is { Ready: true } ? "" : null),
+                prober_health   = p?.Raw,
+                prober_checked_at = _store.ProberCheckedUtc
+            }, ct);
         }
         catch (Exception ex)
         {
-            _log.LogWarning(ex, "[CANARY] Could not read config, using defaults");
-            return new Cfg(900, 120, true, true, false);
+            _log.LogWarning(ex, "[CANARY] Could not publish status");
         }
+    }
+
+    private static async Task<bool> Delay(TimeSpan d, CancellationToken ct)
+    {
+        try { await Task.Delay(d, ct); return true; }
+        catch (OperationCanceledException) { return false; }
     }
 
     // ═══════════════════════════════════════════════════════════ sweep ══
 
+    private sealed record Target(Guid PhoneId, string Number, Guid? HostId, Guid? UserId, bool IsCloudApi);
+
     private async Task SweepAsync(Cfg cfg, CancellationToken ct)
     {
         using var scope = _scopes.CreateScope();
-        var rpc   = scope.ServiceProvider.GetRequiredService<SupabaseRpc>();
-        var relay = scope.ServiceProvider.GetRequiredService<CanaryRelay>();
+        var rpc    = scope.ServiceProvider.GetRequiredService<SupabaseRpc>();
+        var prober = scope.ServiceProvider.GetRequiredService<CanaryProber>();
 
-        // ── 1. the prober ────────────────────────────────────────────
-        var prober = await LoadProberAsync(rpc, ct);
-        if (prober == null)
+        // ── 1. ACKs come back here - before /health, which counts webhooks
+        if (!string.IsNullOrWhiteSpace(_opt.CanaryCallbackUrl))
+            await prober.EnsureWebhookAsync(
+                $"{_opt.CanaryCallbackUrl.TrimEnd('/')}/canary/inbound/{_opt.CanaryInboundToken}", ct);
+
+        // ── 2. prober can send and hear ───────────────────────────────
+        var health = await prober.HealthAsync(ct);
+        _store.Prober = health;
+        _store.ProberCheckedUtc = DateTime.UtcNow;
+
+        if (!health.Ready)
         {
-            _log.LogWarning("[CANARY] No prober in CONNECT - nothing to sweep");
+            _store.LastSweepResult = $"skipped - prober not ready: {health.Reason}";
+            _log.LogError("[CANARY] Prober not ready ({Reason}) - sweep skipped, customers not alerted", health.Reason);
+
+            // A row per skipped sweep, so a dead prober (revoked/expired token,
+            // NATS down) shows up in the run history instead of as silence.
+            await rpc.InsertAsync("canary_runs", new
+            {
+                status        = "aborted",
+                total         = 0,
+                prober_number = _opt.CanaryProberNumber,
+                error         = $"prober not ready: {health.Reason}",
+                finished_at   = DateTime.UtcNow
+            }, ct);
             return;
         }
 
-        if (prober.Value.SendScenario == null)
-        {
-            _log.LogWarning("[CANARY] Prober has no send_scenario - upload it on the provisioning screen");
-            return;
-        }
-
-        // ── 2. one webhook, ours ─────────────────────────────────────
-        if (!string.IsNullOrWhiteSpace(_opt.CanaryWebhookUrl))
-            await relay.EnsureWebhookAsync(
-                $"{_opt.CanaryWebhookUrl.TrimEnd('/')}/{prober.Value.Id}", ct);
-
-        // ── 3. who is being watched ──────────────────────────────────
-        var targets = await LoadTargetsAsync(rpc, prober.Value.Id, ct);
+        // ── 3. who ────────────────────────────────────────────────────
+        var targets = await LoadTargetsAsync(rpc, ct);
         if (targets.Count == 0)
         {
-            _log.LogWarning("[CANARY] Prober has no contacts yet - it must announce itself first");
+            _store.LastSweepResult = "no active phones";
             return;
         }
 
-        // ── 4. open the run ──────────────────────────────────────────
-        var runEl = await rpc.InsertAsync("canary_runs", new
+        var run = await rpc.InsertAsync("canary_runs", new
         {
-            heartbeat_phone_id = prober.Value.Id,
-            status             = "running",
-            total              = targets.Count
+            status        = "running",
+            total         = targets.Count,
+            prober_number = _opt.CanaryProberNumber
         }, ct);
 
-        if (!runEl.TryGetProperty("id", out var runIdEl)
-            || !Guid.TryParse(runIdEl.GetString(), out var runId))
+        if (!run.TryGetProperty("id", out var runIdEl) || !Guid.TryParse(runIdEl.GetString(), out var runId))
         {
             _log.LogError("[CANARY] Could not open a run");
             return;
         }
 
-        _log.LogInformation("[CANARY] Run {RunId} starting | {Count} phones", runId, targets.Count);
+        _log.LogInformation("[CANARY] Run {RunId} | {Count} phones | template={Tpl}/{Lang}",
+            runId, targets.Count, cfg.Template, cfg.Language);
 
-        var skipped = 0;
-
+        // ── 4. send ───────────────────────────────────────────────────
         foreach (var t in targets)
         {
             if (ct.IsCancellationRequested) break;
+            var sent = await CheckOneAsync(rpc, prober, cfg, runId, t, ct);
 
-            try
-            {
-                var ok = await StartCheckAsync(rpc, relay, cfg, prober.Value, t, runId, ct);
-                if (!ok) skipped++;
-            }
-            catch (Exception ex)
-            {
-                skipped++;
-                _log.LogError(ex, "[CANARY] Could not start check for phone {PhoneId}", t.PhoneId);
-            }
+            // Meta rate-limits bursts from a fresh number. Gap only after a
+            // real send - skipped phones cost nothing.
+            if (sent && cfg.SendGapMs > 0) await Task.Delay(cfg.SendGapMs, ct);
         }
 
-        // ── 5. let the replies land, then sweep up ───────────────────
-        await Delay(TimeSpan.FromSeconds(cfg.TimeoutSec + 15), ct);
-        await _store.ExpireStaleAsync(runId, TimeSpan.FromSeconds(cfg.TimeoutSec), ct);
+        // ── 5. wait for ACKs, then close ──────────────────────────────
+        await Task.Delay(TimeSpan.FromSeconds(cfg.TimeoutSec), ct);
 
-        await CloseRunAsync(rpc, runId, skipped, ct);
-
-        // ── 6. tell the customer ─────────────────────────────────────
-        if (cfg.Notify)
-            await NotifyAsync(rpc, runId, cfg.NotifyOnPass, ct);
-    }
-
-    // ══════════════════════════════════════════════════════════ pieces ══
-
-    private readonly record struct Prober(
-        Guid Id, string PhoneNumber, JsonElement? SendScenario, JsonElement? CheckScenario, DateTime? UpdatedAt);
-
-    private readonly record struct Target(
-        Guid ContactId, Guid PhoneId, string? PhoneNumber, Guid? HostId, Guid? UserId);
-
-    private async Task<Prober?> LoadProberAsync(SupabaseRpc rpc, CancellationToken ct)
-    {
-        var rows = await rpc.SelectAsync("heartbeatphones",
-            "select=*&status=eq.CONNECT&limit=1", ct);
-
-        foreach (var r in rows.EnumerateArray())
+        // Three different failures behind one "no ACK", told apart by Meta's
+        // delivery receipts:
+        //   -1        Meta rejected the CHECK          (prober / template side)
+        //   2..4      reached the phone, no ACK        (Manager / auto-reply side)
+        //   null, 1   never reached the phone          (phone offline / WhatsApp disconnected)
+        var f = $"run_id=eq.{runId}&status=eq.sent";
+        await rpc.PatchAsync("canary_checks", f + "&delivery_status=eq.-1", new
         {
-            if (!r.TryGetProperty("id", out var idEl) || !Guid.TryParse(idEl.GetString(), out var id))
-                continue;
+            status = "send_failed"
+        }, ct);
+        await rpc.PatchAsync("canary_checks", f + "&delivery_status=gte.2", new
+        {
+            status = "timeout",
+            error  = $"delivered to the phone, no ACK within {cfg.TimeoutSec}s - Manager auto-reply or outbound broken"
+        }, ct);
+        await rpc.PatchAsync("canary_checks", f, new
+        {
+            status = "timeout",
+            error  = $"not delivered within {cfg.TimeoutSec}s - phone offline or WhatsApp disconnected"
+        }, ct);
 
-            return new Prober(
-                id,
-                r.TryGetProperty("phone_number", out var n) ? n.GetString() ?? "" : "",
-                Opt(r, "send_scenario"),
-                Opt(r, "check_scenario"),
-                r.TryGetProperty("updated_at", out var u) && u.ValueKind == JsonValueKind.String
-                    && DateTime.TryParse(u.GetString(), out var d) ? d : null);
-        }
+        var (passed, failed, skipped) = await CloseRunAsync(rpc, runId, ct);
+        _store.LastSweepResult = $"passed={passed} failed={failed} skipped={skipped}";
 
-        return null;
-
-        static JsonElement? Opt(JsonElement el, string name) =>
-            el.TryGetProperty(name, out var v) && v.ValueKind is not (JsonValueKind.Null or JsonValueKind.Undefined)
-                ? v.Clone() : null;
+        if (cfg.Notify)
+            await NotifyTransitionsAsync(rpc, runId, ct);
     }
 
-    /// <summary>
-    /// The monitored phones are exactly the prober's contacts. Each was
-    /// created by WhatsAppDockerManager when the prober announced itself, so
-    /// this list grows on its own as phones are provisioned.
-    /// </summary>
-    private async Task<List<Target>> LoadTargetsAsync(SupabaseRpc rpc, Guid proberId, CancellationToken ct)
+    private async Task<List<Target>> LoadTargetsAsync(SupabaseRpc rpc, CancellationToken ct)
     {
-        var rows = await rpc.SelectAsync("contacts",
-            $"select=id,phone_id&heartbeat_phone_id=eq.{proberId}", ct);
+        // One query. The old design walked the prober's contacts and then
+        // looked up each phone - which meant a phone was only watched after
+        // an emoji handshake created that contact.
+        var rows = await rpc.SelectAsync("phones",
+            "select=id,number,host_id,user_id,phone_number_id&status=eq.active&order=number", ct);
 
         var list = new List<Target>();
-
-        foreach (var r in rows.EnumerateArray())
+        foreach (var p in rows.EnumerateArray())
         {
-            if (!r.TryGetProperty("id", out var cEl) || !Guid.TryParse(cEl.GetString(), out var contactId))
-                continue;
-            if (!r.TryGetProperty("phone_id", out var pEl) || !Guid.TryParse(pEl.GetString(), out var phoneId))
-                continue;
+            if (!Guid.TryParse(p.GetProperty("id").GetString(), out var id)) continue;
 
-            var phones = await rpc.SelectAsync("phones",
-                $"select=number,host_id,user_id,status&id=eq.{phoneId}&limit=1", ct);
+            var number = p.TryGetProperty("number", out var n) ? n.GetString() : null;
+            if (string.IsNullOrWhiteSpace(number)) continue;
 
-            string? number = null; Guid? hostId = null; Guid? userId = null; var active = false;
+            // The prober never checks itself.
+            if (CanaryStore.SameNumber(number, _opt.CanaryProberNumber)) continue;
 
-            foreach (var p in phones.EnumerateArray())
-            {
-                number = p.TryGetProperty("number", out var nn) ? nn.GetString() : null;
-                active = p.TryGetProperty("status", out var st)
-                         && string.Equals(st.GetString(), "active", StringComparison.OrdinalIgnoreCase);
-                if (p.TryGetProperty("host_id", out var h) && Guid.TryParse(h.GetString(), out var hg)) hostId = hg;
-                if (p.TryGetProperty("user_id", out var u) && Guid.TryParse(u.GetString(), out var ug)) userId = ug;
-            }
+            Guid? host = p.TryGetProperty("host_id", out var h) && Guid.TryParse(h.GetString(), out var hg) ? hg : null;
+            Guid? user = p.TryGetProperty("user_id", out var u) && Guid.TryParse(u.GetString(), out var ug) ? ug : null;
+            var cloud  = p.TryGetProperty("phone_number_id", out var pn)
+                         && pn.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(pn.GetString());
 
-            // An inactive phone is not broken, it is retired. Checking it
-            // would produce a failure every sweep and train you to ignore them.
-            if (!active) continue;
-
-            list.Add(new Target(contactId, phoneId, number, hostId, userId));
+            list.Add(new Target(id, number!, host, user, cloud));
         }
-
         return list;
     }
 
-    private async Task<bool> StartCheckAsync(
-        SupabaseRpc rpc, CanaryRelay relay, Cfg cfg,
-        Prober prober, Target t, Guid runId, CancellationToken ct)
+    /// <returns>true when a template actually went out.</returns>
+    private async Task<bool> CheckOneAsync(
+        SupabaseRpc rpc, CanaryProber prober, Cfg cfg, Guid runId, Target t, CancellationToken ct)
     {
-        // The id the Worker will quote back in every leaf and in the summary.
-        // Deliberately not a calls.id - nothing in the product schema knows
-        // about it, which is the point.
-        var callId = $"canary-{Guid.NewGuid():N}";
+        var code = CanaryStore.NewCode();
 
-        var scenarioOk = cfg.AutoScenario
-            ? await EnsureCheckScenarioAsync(rpc, prober, t, ct)
-            : (bool?)null;
-
-        var checkEl = await rpc.InsertAsync("canary_checks", new
+        if (t.IsCloudApi && !cfg.CheckCloudApi)
         {
-            run_id         = runId,
-            phone_id       = t.PhoneId,
-            contact_id     = t.ContactId,
-            phone_number   = t.PhoneNumber,
-            host_id        = t.HostId,
-            status         = "pending",
-            scenario_ok    = scenarioOk,
-            canary_call_id = callId
+            await rpc.InsertAsync("canary_checks", new
+            {
+                run_id = runId, phone_id = t.PhoneId, phone_number = t.Number, host_id = t.HostId,
+                check_code = code, status = "skipped",
+                error = "Cloud API target - business→business delivery is unverified"
+            }, ct);
+            return false;
+        }
+
+        var row = await rpc.InsertAsync("canary_checks", new
+        {
+            run_id = runId, phone_id = t.PhoneId, phone_number = t.Number, host_id = t.HostId,
+            check_code = code, status = "pending"
         }, ct);
 
-        if (!checkEl.TryGetProperty("id", out var idEl) || !Guid.TryParse(idEl.GetString(), out var checkId))
+        if (!row.TryGetProperty("id", out var idEl) || !Guid.TryParse(idEl.GetString(), out var checkId))
             return false;
 
-        await _store.RegisterCallAsync(callId, checkId, ct);
-
-        if (scenarioOk == false)
+        // sent_at goes in before the HTTP call returns: a fast phone can ACK
+        // while /send/template is still in flight, and the ACK handler only
+        // accepts rows already in 'sent'.
+        await rpc.PatchAsync("canary_checks", $"id=eq.{checkId}", new
         {
-            await rpc.PatchAsync("canary_checks", $"id=eq.{checkId}", new
-            {
-                status = "scenario_missing",
-                error  = "CHECKHEALTH could not be written to the target phone"
-            }, ct);
-            return false;
-        }
+            status = "sent", sent_at = DateTime.UtcNow
+        }, ct);
 
-        // Init the Worker. scenario_json goes over as the camelCase ICR shape
-        // exported from the Designer - IcrConverter reads it verbatim, so no
-        // translation happens anywhere in this path.
-        var envelope = new
+        var (ok, wamid, error) = await prober.SendCheckAsync(t.Number, cfg.Template, cfg.Language, code, ct);
+
+        if (ok)
         {
-            typeEvent     = "init",
-            phone_id      = prober.Id.ToString(),
-            contact_id    = t.ContactId.ToString(),
-            contact_phone = t.PhoneNumber,
-            call_id       = callId,
-            scenario_id   = $"canary-{prober.Id}",
-            scenario_json = prober.SendScenario
-        };
-
-        using var scope = _scopes.CreateScope();
-        var http = scope.ServiceProvider.GetRequiredService<IHttpClientFactory>().CreateClient();
-        http.Timeout = TimeSpan.FromSeconds(20);
-
-        var url = $"{_opt.CanaryWorkerUrl.TrimEnd('/')}/webhook/event";
-
-        try
-        {
-            using var res = await http.PostAsJsonAsync(url, envelope, ct);
-            var body = await res.Content.ReadAsStringAsync(ct);
-
-            if (!res.IsSuccessStatusCode)
-            {
-                // 409 means the Worker still holds a session for this contact,
-                // usually because the previous sweep never finished.
-                var reason = (int)res.StatusCode == 409
-                    ? "worker still has an open session for this contact"
-                    : $"worker returned {(int)res.StatusCode}";
-
-                await rpc.PatchAsync("canary_checks", $"id=eq.{checkId}", new
-                {
-                    status = "failed",
-                    error  = reason
-                }, ct);
-
-                _log.LogWarning("[CANARY] init rejected for {Phone}: {Reason} | {Body}",
-                    t.PhoneNumber, reason, body);
-                return false;
-            }
-
-            await rpc.PatchAsync("canary_checks", $"id=eq.{checkId}", new
-            {
-                status  = "sent",
-                sent_at = DateTime.UtcNow
-            }, ct);
-
+            await rpc.PatchAsync("canary_checks", $"id=eq.{checkId}", new { wa_message_id = wamid }, ct);
             return true;
         }
-        catch (Exception ex)
+
+        await rpc.PatchAsync("canary_checks", $"id=eq.{checkId}&status=eq.sent", new
         {
-            await rpc.PatchAsync("canary_checks", $"id=eq.{checkId}", new
-            {
-                status = "failed",
-                error  = $"could not reach worker: {ex.Message}"
-            }, ct);
-            return false;
-        }
+            status = "send_failed", error
+        }, ct);
+        _log.LogWarning("[CANARY] Send to {Number} failed: {Error}", t.Number, error);
+        return false;
     }
 
-    /// <summary>
-    /// Writes CHECKHEALTH onto the target phone when it is missing, and
-    /// rewrites it only when the prober's copy actually changed.
-    ///
-    /// The comparison is a hash of the scenario itself rather than a
-    /// timestamp: heartbeatphones.updated_at moves for unrelated reasons -
-    /// the uid arriving on authentication, an edited identification emoji -
-    /// and each of those would otherwise rewrite the scenario on every phone
-    /// in the fleet.
-    ///
-    /// Marked is_system so the Designer leaves it alone and so overwriting
-    /// it is safe.
-    /// </summary>
-    private async Task<bool> EnsureCheckScenarioAsync(
-        SupabaseRpc rpc, Prober prober, Target t, CancellationToken ct)
+    private async Task<(int passed, int failed, int skipped)> CloseRunAsync(
+        SupabaseRpc rpc, Guid runId, CancellationToken ct)
     {
-        if (prober.CheckScenario == null) return false;
+        var rows = await rpc.SelectAsync("canary_checks", $"select=status&run_id=eq.{runId}", ct);
 
-        try
+        int passed = 0, failed = 0, skipped = 0;
+        foreach (var r in rows.EnumerateArray())
         {
-            var source = prober.CheckScenario.Value.GetRawText();
-            var hash   = Sha256(source);
-
-            var existing = await rpc.SelectAsync("scenarios",
-                $"select=id,system_hash&phone_id=eq.{t.PhoneId}&is_system=is.true&name=eq.CHECKHEALTH&limit=1", ct);
-
-            foreach (var row in existing.EnumerateArray())
+            switch (r.GetProperty("status").GetString())
             {
-                if (!row.TryGetProperty("id", out var idEl)) continue;
-
-                var current = row.TryGetProperty("system_hash", out var h) ? h.GetString() : null;
-                if (current == hash) return true;   // unchanged, nothing to do
-
-                await rpc.PatchAsync("scenarios", $"id=eq.{idEl.GetString()}", new
-                {
-                    config      = BuildDbConfig(prober.CheckScenario.Value),
-                    contact_id  = t.ContactId,
-                    status      = "active",
-                    event_type  = "trigger",
-                    system_hash = hash
-                }, ct);
-
-                _log.LogWarning("[CANARY] CHECKHEALTH changed - rewritten on {Phone}", t.PhoneNumber);
-                return true;
+                case "passed":  passed++;  break;
+                case "skipped": skipped++; break;
+                // send_failed means the prober could not send - not the
+                // target's fault, but still not a healthy phone we can vouch for.
+                default:        failed++;  break;
             }
-
-            await rpc.InsertAsync("scenarios", new
-            {
-                phone_id    = t.PhoneId,
-                contact_id  = t.ContactId,
-                name        = "CHECKHEALTH",
-                status      = "active",
-                event_type  = "trigger",
-                priority    = 1,
-                is_system   = true,
-                system_hash = hash,
-                config      = BuildDbConfig(prober.CheckScenario.Value)
-            }, ct);
-
-            _log.LogWarning("[CANARY] Created CHECKHEALTH on {Phone}", t.PhoneNumber);
-            return true;
         }
-        catch (Exception ex)
+
+        await rpc.PatchAsync("canary_runs", $"id=eq.{runId}", new
         {
-            _log.LogError(ex, "[CANARY] Could not ensure CHECKHEALTH on {PhoneId}", t.PhoneId);
-            return false;
-        }
+            status = "completed", finished_at = DateTime.UtcNow, passed, failed, skipped
+        }, ct);
+
+        _log.LogWarning("[CANARY] Run {RunId} done | passed={P} failed={F} skipped={S}",
+            runId, passed, failed, skipped);
+        return (passed, failed, skipped);
     }
 
-    private static string Sha256(string s) =>
-        Convert.ToHexString(
-            System.Security.Cryptography.SHA256.HashData(
-                System.Text.Encoding.UTF8.GetBytes(s)))[..32];
+    // ═════════════════════════════════════════════════════════ notify ══
+
+    private static bool IsHealthy(string? s) => s is "passed" or "late_ack";
+    private static bool Counts(string? s)    => s is not ("skipped" or "send_failed" or null);
 
     /// <summary>
-    /// The Designer exports camelCase; the scenarios table stores snake_case
-    /// and keeps event_type in its own column. The Worker reads the camelCase
-    /// form straight from the envelope, so this conversion is only needed for
-    /// the copy that lives in the database for Spine to find.
+    /// One notification when a phone goes down, one when it comes back -
+    /// not one every 15 minutes while it stays down. The previous verdict
+    /// for the same phone decides; skipped and send_failed carry no verdict
+    /// about the phone, so they are looked past.
     /// </summary>
-    private static Dictionary<string, object?> BuildDbConfig(JsonElement icr)
-    {
-        object? Get(string name) =>
-            icr.TryGetProperty(name, out var v) && v.ValueKind is not (JsonValueKind.Null or JsonValueKind.Undefined)
-                ? JsonSerializer.Deserialize<object>(v.GetRawText())
-                : null;
-
-        return new Dictionary<string, object?>
-        {
-            ["canvas"]         = Get("canvas"),
-            ["interval"]       = Get("interval"),
-            ["arrow_data"]     = Get("arrowData")     ?? new Dictionary<string, object>(),
-            ["bot_contact"]    = Get("botContact"),
-            ["estimated_time"] = Get("estimatedTime"),
-            ["use_auto_calc"]  = false,
-            ["description"]    = "CHECKHEALTH - managed by PhoneOrchestrator, do not edit"
-        };
-    }
-
-    private async Task CloseRunAsync(SupabaseRpc rpc, Guid runId, int skipped, CancellationToken ct)
+    private async Task NotifyTransitionsAsync(SupabaseRpc rpc, Guid runId, CancellationToken ct)
     {
         try
         {
-            var rows = await rpc.SelectAsync("canary_checks", $"select=status&run_id=eq.{runId}", ct);
-
-            int passed = 0, failed = 0;
-            foreach (var r in rows.EnumerateArray())
-            {
-                var s = r.TryGetProperty("status", out var v) ? v.GetString() : null;
-                if (s == "passed") passed++;
-                else if (s != "skipped") failed++;
-            }
-
-            await rpc.PatchAsync("canary_runs", $"id=eq.{runId}", new
-            {
-                status      = "completed",
-                finished_at = DateTime.UtcNow,
-                passed,
-                failed,
-                skipped
-            }, ct);
-
-            _log.LogWarning("[CANARY] Run {RunId} done | passed={Passed} failed={Failed} skipped={Skipped}",
-                runId, passed, failed, skipped);
-        }
-        catch (Exception ex)
-        {
-            _log.LogError(ex, "[CANARY] Could not close run {RunId}", runId);
-        }
-    }
-
-    /// <summary>
-    /// One notification per phone, not per run: the customer cares that their
-    /// phone is down, not that a sweep happened.
-    /// </summary>
-    private async Task NotifyAsync(SupabaseRpc rpc, Guid runId, bool onPass, CancellationToken ct)
-    {
-        try
-        {
-            var filter = onPass ? "" : "&status=neq.passed";
             var rows = await rpc.SelectAsync("canary_checks",
-                $"select=id,phone_id,phone_number,status,error&run_id=eq.{runId}&notified=is.false{filter}", ct);
+                $"select=id,phone_id,phone_number,status,error,created_at&run_id=eq.{runId}&notified=is.false", ct);
 
             foreach (var r in rows.EnumerateArray())
             {
-                if (!r.TryGetProperty("id", out var idEl) || !Guid.TryParse(idEl.GetString(), out var checkId))
-                    continue;
-                if (!r.TryGetProperty("phone_id", out var pEl) || !Guid.TryParse(pEl.GetString(), out var phoneId))
-                    continue;
+                var status = r.GetProperty("status").GetString();
+                if (!Counts(status)) continue;
 
-                var status = r.TryGetProperty("status", out var s) ? s.GetString() : "unknown";
-                var number = r.TryGetProperty("phone_number", out var n) ? n.GetString() : null;
-                var error  = r.TryGetProperty("error", out var e) ? e.GetString() : null;
-                var passed = status == "passed";
+                var checkId = r.GetProperty("id").GetString();
+                var phoneId = r.GetProperty("phone_id").GetString();
+                var number  = r.TryGetProperty("phone_number", out var n) ? n.GetString() : null;
+                var error   = r.TryGetProperty("error", out var e) ? e.GetString() : null;
+                var created = r.GetProperty("created_at").GetString();
 
-                // notifications.user_id comes from the phone, so the alert
-                // reaches whoever owns it rather than a system account.
+                var prev = await rpc.SelectAsync("canary_checks",
+                    $"select=status&phone_id=eq.{phoneId}&created_at=lt.{Uri.EscapeDataString(created!)}" +
+                    "&status=not.in.(skipped,send_failed,pending,sent)&order=created_at.desc&limit=1", ct);
+
+                string? prevStatus = null;
+                foreach (var p in prev.EnumerateArray()) prevStatus = p.GetProperty("status").GetString();
+
+                var nowOk  = IsHealthy(status);
+                var wasOk  = prevStatus == null || IsHealthy(prevStatus);   // first ever check: assume it was fine
+                if (nowOk == wasOk) continue;
+
                 Guid? userId = null;
-                var phones = await rpc.SelectAsync("phones", $"select=user_id&id=eq.{phoneId}&limit=1", ct);
-                foreach (var p in phones.EnumerateArray())
-                    if (p.TryGetProperty("user_id", out var u) && Guid.TryParse(u.GetString(), out var ug))
-                        userId = ug;
+                var owner = await rpc.SelectAsync("phones", $"select=user_id&id=eq.{phoneId}&limit=1", ct);
+                foreach (var o in owner.EnumerateArray())
+                    if (o.TryGetProperty("user_id", out var u) && Guid.TryParse(u.GetString(), out var ug)) userId = ug;
 
                 await rpc.InsertAsync("notifications", new
                 {
                     user_id   = userId,
                     phone_id  = phoneId,
-                    title     = passed ? "בדיקת תקינות עברה" : "בדיקת תקינות נכשלה",
-                    message   = passed
-                        ? $"הטלפון {number} עבר את בדיקת התקינות."
-                        : $"הטלפון {number} לא הגיב לבדיקת התקינות. {error}",
-                    log_level = passed ? "info" : "error",
+                    title     = nowOk ? "הטלפון חזר לתקינות" : "בדיקת תקינות נכשלה",
+                    message   = nowOk
+                        ? $"הטלפון {number} עונה שוב לבדיקת התקינות."
+                        : $"הטלפון {number} לא אישר את בדיקת התקינות. {error}",
+                    log_level = nowOk ? "info" : "error",
                     source    = "canary",
                     is_read   = false,
-                    extra     = new { run_id = runId, check_id = checkId, status }
+                    extra     = new { run_id = runId, check_id = checkId, status, previous = prevStatus }
                 }, ct);
 
                 await rpc.PatchAsync("canary_checks", $"id=eq.{checkId}", new { notified = true }, ct);
@@ -558,11 +512,5 @@ public sealed class CanaryLoop : BackgroundService
         {
             _log.LogError(ex, "[CANARY] Notification pass failed for run {RunId}", runId);
         }
-    }
-
-    private static async Task<bool> Delay(TimeSpan d, CancellationToken ct)
-    {
-        try { await Task.Delay(d, ct); return true; }
-        catch (OperationCanceledException) { return false; }
     }
 }

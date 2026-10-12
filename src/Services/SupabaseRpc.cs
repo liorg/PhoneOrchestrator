@@ -170,6 +170,57 @@ public sealed class SupabaseRpc
             throw new HttpRequestException($"patch {table} -> {(int)res.StatusCode}: {text}");
         }
     }
+
+    /// <summary>PATCH with a pre-serialised body - for writing explicit nulls.</summary>
+    public async Task PatchRawAsync(string table, string filter, string json, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(filter))
+            throw new ArgumentException("A filter is required.", nameof(filter));
+
+        using var req = new HttpRequestMessage(HttpMethod.Patch, $"rest/v1/{table}?{filter}")
+        {
+            Content = new StringContent(json, Encoding.UTF8, "application/json")
+        };
+        using var res = await _http.SendAsync(req, ct);
+        if (!res.IsSuccessStatusCode)
+        {
+            var text = await res.Content.ReadAsStringAsync(ct);
+            _log.LogError("Patch {Table} failed {Status}: {Body}", table, (int)res.StatusCode, text);
+            throw new HttpRequestException($"patch {table} -> {(int)res.StatusCode}: {text}");
+        }
+    }
+
+    /// <summary>
+    /// PATCH that returns the rows it actually changed. The filter doubles as
+    /// a compare-and-set: with status=eq.sent in it, the second of two
+    /// concurrent writers gets an empty array instead of overwriting.
+    /// </summary>
+    public async Task<JsonElement> PatchReturningAsync(
+        string table, string filter, object patch, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(filter))
+            throw new ArgumentException(
+                "A filter is required - an unfiltered PATCH rewrites the whole table.", nameof(filter));
+
+        using var req = new HttpRequestMessage(HttpMethod.Patch, $"rest/v1/{table}?{filter}")
+        {
+            Content = new StringContent(
+                JsonSerializer.Serialize(patch, PatchOpts), Encoding.UTF8, "application/json")
+        };
+        req.Headers.Add("Prefer", "return=representation");
+
+        using var res = await _http.SendAsync(req, ct);
+        var text = await res.Content.ReadAsStringAsync(ct);
+
+        if (!res.IsSuccessStatusCode)
+        {
+            _log.LogError("Patch {Table} failed {Status}: {Body}", table, (int)res.StatusCode, text);
+            throw new HttpRequestException($"patch {table} -> {(int)res.StatusCode}: {text}");
+        }
+
+        using var doc = JsonDocument.Parse(string.IsNullOrWhiteSpace(text) ? "[]" : text);
+        return doc.RootElement.Clone();
+    }
 }
 
 public sealed class AgentHostRow

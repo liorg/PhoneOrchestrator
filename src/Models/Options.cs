@@ -57,31 +57,45 @@ public sealed class OrchestratorOptions
     /// </summary>
     public bool AutoDrain { get; set; } = false;
 
-    // ════════════════════════════════════════════════════════════════════════
-//  Add to OrchestratorOptions.
-// ════════════════════════════════════════════════════════════════════════
-
-    /// <summary>Redis for the sub-event trail. Empty disables the trail.</summary>
-    public string RedisUrl { get; set; } = "";
-
     /// <summary>
-    /// The prober's FastAPI wrapper. Port 8000, not 3001 - Baileys binds to
-    /// localhost inside the container and cannot be reached over the network.
+    /// "full" (default) - host orchestration + dashboard, on michal.
+    /// "canary"         - canary runner only, on botinbound next to the prober:
+    ///                    no host probing, no draining.
     /// </summary>
-    public string CanaryWaUrl { get; set; } = "";
+    public string Mode { get; set; } = "full";
 
-    /// <summary>The prober's dedicated Worker, for the init call.</summary>
-    public string CanaryWorkerUrl { get; set; } = "";
+    // ═══════════════════════════════════════════════════════════ canary ══
+    //
+    // v2: one Cloud API prober, one template, one ACK. No Worker, no
+    // scenarios on the monitored phones, no Redis. Tunables that change at
+    // runtime (interval, timeout, template) live in bot_config['canary.*'];
+    // what is here is wiring that only changes with a redeploy.
 
     /// <summary>
-    /// Where the prober's container should post its events. Read by
-    /// whatsapp-canary, so it must be a service name rather than localhost.
+    /// The prober's whatsapp-cloudapi container, by name on whqueue-net,
+    /// e.g. http://canary-prober:8000. Sends the template and answers /health.
     /// </summary>
-    public string CanaryWebhookUrl { get; set; } = "";
+    public string CanaryProberUrl { get; set; } = "";
+
+    /// <summary>The prober's own number. Excluded from the sweep.</summary>
+    public string CanaryProberNumber { get; set; } = "";
 
     /// <summary>
-    /// Master switch for the canary sweep. Ships false: the services come up
-    /// and connect, but no message reaches a customer phone until this is on.
+    /// How the prober reaches us, e.g. http://orchestrator:8080. The webhook
+    /// registered on the prober is {this}/canary/inbound/{token}.
+    /// </summary>
+    public string CanaryCallbackUrl { get; set; } = "";
+
+    /// <summary>
+    /// Shared secret in the callback path. The inbound routes are outside
+    /// AuthMiddleware (the container sends no credentials), so this is the
+    /// only thing standing between the open port and a forged ACK.
+    /// </summary>
+    public string CanaryInboundToken { get; set; } = "";
+
+    /// <summary>
+    /// Does THIS instance run the canary runner: true on botinbound, false on
+    /// michal. Whether it actually sweeps is canary_control.enabled, at runtime.
     /// </summary>
     public bool CanaryEnabled { get; set; } = false;
 }

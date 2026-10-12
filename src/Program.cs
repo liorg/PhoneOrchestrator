@@ -1,7 +1,6 @@
 using PhoneOrchestrator.Models;
 using PhoneOrchestrator.Services;
 using Microsoft.AspNetCore.HttpOverrides;
-using StackExchange.Redis;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -10,7 +9,8 @@ var builder = WebApplication.CreateBuilder(args);
 foreach (var (secretFile, configKey) in new[]
 {
     ("/run/secrets/supabase_key", "Orchestrator:SupabaseKey"),
-    ("/run/secrets/supabase_url",         "Orchestrator:SupabaseUrl")
+    ("/run/secrets/supabase_url",         "Orchestrator:SupabaseUrl"),
+    ("/run/secrets/canary_inbound_token", "Orchestrator:CanaryInboundToken")
 })
 {
     if (File.Exists(secretFile))
@@ -24,29 +24,18 @@ builder.Services.AddDataProtection();
 builder.Services.AddSingleton<AuthTokens>();
 builder.Services.AddHttpClient<SupabaseRpc>();
 builder.Services.AddHttpClient<HostProbe>();
-builder.Services.AddHostedService<OrchestratorLoop>();
+// Mode=canary (botinbound) runs the canary runner only - two instances
+// probing and draining the same hosts would race each other.
+var canaryOnly = string.Equals(builder.Configuration["Orchestrator:Mode"], "canary",
+                               StringComparison.OrdinalIgnoreCase);
+if (!canaryOnly)
+    builder.Services.AddHostedService<OrchestratorLoop>();
 
 // ── canary ───────────────────────────────────────────────────────────
-// Redis is optional by design: without it the canary loses its sub-event
-// trail but still produces verdicts, so an outage degrades diagnostics
-// rather than stopping health checks.
-var redisUrl = builder.Configuration["Orchestrator:RedisUrl"];
-if (!string.IsNullOrWhiteSpace(redisUrl))
-{
-    builder.Services.AddSingleton<IConnectionMultiplexer>(_ =>
-    {
-        var cfg = ConfigurationOptions.Parse(redisUrl);
-        cfg.AbortOnConnectFail = false;   // keep retrying instead of throwing at startup
-        cfg.ConnectRetry       = 3;
-        cfg.ConnectTimeout     = 5000;
-        return ConnectionMultiplexer.Connect(cfg);
-    });
-}
-
+// v2: Cloud API prober + CHECK template + ACK. No Redis, no Worker.
 builder.Services.AddSingleton<CanaryStore>();
-builder.Services.AddHttpClient<CanaryRelay>();
+builder.Services.AddHttpClient<CanaryProber>();
 builder.Services.AddHostedService<CanaryLoop>();
-
 
 builder.Services.AddControllers();
 

@@ -83,3 +83,42 @@ down first, confirm the verdict was right, then turn it on.
 - **`agent_hosts.port_range_start/end` is dead config.** Observed ports sit
   outside it. Migration nulls `api_port` and lets WhatsAppDockerManager
   reallocate.
+
+## Canary v2 — CHECK ID / ACK
+
+```
+botinbound (stack canary, on whqueue-net)                    michal
+┌───────────────────────────────────────────────┐            ┌──────────────┐
+│ canary-runner (this image, Mode=canary)        │            │ orchestrator │
+│   reads canary_control every 30s ──────────────┼── DB ──────┤ dashboard    │
+│   → /send/template check_id {code}             │            │ (read/write  │
+│ canary-prober (whatsapp-cloudapi)              │            │  the row)    │
+│   → Meta → every phones.status='active'        │            └──────────────┘
+│   ← "ACK {code}" ← Meta ← whqueue ← NATS       │
+│   → POST canary-runner/canary/inbound/{token}  │
+└───────────────────────────────────────────────┘
+```
+
+The two VMs never talk to each other - both only talk to Supabase.
+
+**On/off and schedule: the `canary_control` row.** `enabled`, `interval_sec`,
+`active_from`/`active_to` (daily window, `timezone`), `timeout_sec`,
+`run_now_at` (one sweep now, even when disabled). The runner re-reads it every
+30s and writes its own status back into it (`runner_seen_at`, `runner_mode`,
+`prober_ready`, `last_result`, `next_sweep_at`). The dashboard edits the row.
+
+| status | meaning |
+|---|---|
+| `passed` | ACK from the right number within `timeout_sec` |
+| `timeout` | no ACK; `delivery_status` says whether it reached the phone |
+| `late_ack` | ACK after the timeout - alive but slow |
+| `failed` | ACK from a different number (routing bug) |
+| `send_failed` | Meta refused the CHECK - says nothing about the target |
+| `skipped` | Cloud API target (`check_cloudapi=false`) |
+
+The sweep does not start when the prober reports `nats_connected`,
+`token_ok`, `registered` false or zero webhooks; that sweep is recorded as an
+`aborted` run. Notifications fire on transition only (down / recovered).
+
+**Meta.** Template `check_id`, UTILITY, `he`, in the prober's WABA, body
+containing `CHECK ID: {{1}}`. Token: System User, expiration Never.
