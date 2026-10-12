@@ -83,11 +83,14 @@ public sealed class SupabaseRpc
         return el;
     }
 
-    /// <summary>Plain table read - only used by the scan loop to get IPs to probe.</summary>
+    /// <summary>Plain table read - only used by the scan loop to get IPs to probe. Manager hosts only.</summary>
     public async Task<List<AgentHostRow>> GetHostsAsync(CancellationToken ct)
     {
         using var res = await _http.GetAsync(
-            "rest/v1/agent_hosts?select=id,host_name,ip_address,status,last_heartbeat&order=host_name", ct);
+            "rest/v1/agent_hosts?select=id,host_name,ip_address,status,last_heartbeat" +
+            // kind='canary' (botinbound) has no HostAgent on :5000 - probing it
+            // would fail every scan and, with AutoDrain on, drain its phone.
+            "&or=(kind.is.null,kind.neq.canary)&order=host_name", ct);
 
         var text = await res.Content.ReadAsStringAsync(ct);
         if (!res.IsSuccessStatusCode)

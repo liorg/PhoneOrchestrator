@@ -119,7 +119,7 @@ public sealed class CanaryLoop : BackgroundService
         string Template, string Language, bool CheckCloudApi, bool Notify,
         TimeSpan? ActiveFrom, TimeSpan? ActiveTo, string TimeZone, DateTime? RunNowAt);
 
-    private static readonly Cfg Off = new(false, 900, 120, 1500, "check_id", "he", false, true,
+    private static readonly Cfg Off = new(false, 900, 120, 1500, "check_id", "en", false, true,
                                           null, null, "Asia/Jerusalem", null);
 
     private async Task<Cfg> LoadControlAsync(CancellationToken ct)
@@ -147,7 +147,7 @@ public sealed class CanaryLoop : BackgroundService
                     TimeoutSec:    Math.Max(15, I("timeout_sec", 120)),
                     SendGapMs:     Math.Max(0,  I("send_gap_ms", 1500)),
                     Template:      S("template_name", "check_id"),
-                    Language:      S("template_lang", "he"),
+                    Language:      S("template_lang", "en"),
                     CheckCloudApi: B("check_cloudapi", false),
                     Notify:        B("notify", true),
                     ActiveFrom:    T("active_from"),
@@ -226,6 +226,23 @@ public sealed class CanaryLoop : BackgroundService
         catch (Exception ex)
         {
             _log.LogWarning(ex, "[CANARY] Could not publish status");
+        }
+
+        // The canary host's heartbeat. Written regardless of enabled: the
+        // host is alive whenever the runner is, sweeping or not.
+        if (Guid.TryParse(_opt.CanaryHostId, out var hostId))
+        {
+            try
+            {
+                using var scope = _scopes.CreateScope();
+                var rpc = scope.ServiceProvider.GetRequiredService<SupabaseRpc>();
+                await rpc.PatchAsync("agent_hosts", $"id=eq.{hostId}&kind=eq.canary",
+                    new { last_heartbeat = DateTime.UtcNow }, ct);
+            }
+            catch (Exception ex)
+            {
+                _log.LogWarning(ex, "[CANARY] Could not write host heartbeat");
+            }
         }
     }
 
