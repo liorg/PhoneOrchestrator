@@ -77,6 +77,13 @@ public sealed class OrchestratorOptions
     /// </summary>
     public string CanaryProberUrl { get; set; } = "";
 
+    /// <summary>
+    /// agent_hosts.id of the canary host (botinbound, kind='canary'). The
+    /// runner keeps its last_heartbeat fresh, so no Manager mistakes it for a
+    /// dead host and takes over the prober's phone. Empty = no heartbeat.
+    /// </summary>
+    public string CanaryHostId { get; set; } = "";
+
     /// <summary>The prober's own number. Excluded from the sweep.</summary>
     public string CanaryProberNumber { get; set; } = "";
 
