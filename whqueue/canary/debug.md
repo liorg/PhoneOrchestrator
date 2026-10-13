@@ -91,3 +91,19 @@ sudo ./set-canary-token.sh
 ```
 
 TEST SYNC!!!
+
+STOP CANARY
+```bash
+sudo docker service scale canary_canary-runner=0
+```
+
+
+REMOVE  CANARY
+```bash
+sudo docker stack rm canary
+```
+
+```bash
+select created_at, user_id, phone_id, title, message, log_level, is_read
+from notifications where source = 'canary' order by created_at desc limit 20;
+```
