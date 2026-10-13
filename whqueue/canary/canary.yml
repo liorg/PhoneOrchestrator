@@ -18,6 +18,7 @@
 #   canary_supabase_key  service-role key של ה-runner.
 #
 # שום דבר לא מפורסם החוצה. ה-dashboard ב-michal רק קורא/כותב את canary_control.
+# SYBNC
 
 version: "3.8"
 
