@@ -1,5 +1,13 @@
 
 # DEPLOY ON WEB (MICHAL)
+``
+
+```bash
+cd /opt/phone-orchestrator
+
+chmod +x deploy.sh
+sudo ./deploy.sh
+```
 
 ## HEALTH
 ```bash
@@ -61,7 +69,8 @@ git checkout -- deploy.sh
 git pull
 chmod +x deploy.sh
 ./deploy.sh
-```
+
+`
 
 test and log
 

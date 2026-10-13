@@ -33,6 +33,7 @@ public sealed class AuthMiddleware
         "/version",
         "/login.html",
         "/styles.css",
+        "/logo2.png",
         "/api/auth/login",
         "/api/auth/logout"
     };
