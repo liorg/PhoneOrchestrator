@@ -60,6 +60,30 @@ sudo docker service logs canary_canary-runner --tail 20 2>&1 | grep -i canary
 sudo docker service logs canary_canary-prober --tail 40 2>&1 | grep -iE "consumer|subscribed|override|webhook|error"
 
 ```
+TEST SENDING
+
+```bash
+R="$(sudo docker ps -q -f label=com.docker.swarm.service.name=canary_canary-runner | head -1)"
+
+# 1. מה יש בתבנית: שפה מדויקת ופרמטרים
+sudo docker exec "$R" curl -s http://canary-prober:8000/templates/3p_direct_integration_test_template \
+  | python3 -m json.tool | grep -E '"language"|"status"|"text"|\{\{'
+
+# 2. שליחה לטלפון שלך (בלי params אם אין {{1}} בטקסט)
+sudo docker exec "$R" curl -s -X POST http://canary-prober:8000/send/template \
+  -H 'Content-Type: application/json' \
+  -d '{"jid":"972546252491","name":"3p_direct_integration_test_template","language":"en_US"}'; echo
+
+
+```
+
+
+TEST ACK
+```bash
+sudo docker service logs canary_canary-prober --since 5m 2>&1 | grep -vE "GET /health|graph.facebook" | tail -15
+sudo docker service logs canary_canary-runner --since 5m 2>&1 | grep -iE "ACK|inbound|CANARY" | tail -10
+```
+
 
 ## UPDATE TOKEN
 ```bash
@@ -128,4 +152,13 @@ git checkout -- deploy.sh
 git pull
 chmod +x deploy.sh
 ./deploy.sh
+```
+
+test and log
+
+```bash
+curl -s localhost:8090/version; echo
+sudo bash -c 'source .env; curl -s -u "${AUTH_USER:-admin}:$AUTH_PASSWORD" localhost:8090/api/canary/control' \
+  | python3 -m json.tool | grep -E '"runnerAlive"|"runner_mode"|"prober_ready"|"enabled"|"runner_version"'
+sudo docker service logs orchestrator_orchestrator --since 2m 2>&1 | grep -c "botinbound unavailable"
 ```
