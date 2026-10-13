@@ -1,0 +1,127 @@
+# canary על ה-swarm של botinbound — stack נפרד מ-whqueue, על אותה whqueue-net.
+#
+# בלי צורת VAR:?msg בקובץ הזה: docker stack deploy מפרש לא נכון הודעות שיש בהן
+# '-' או '/', ומציב את הטקסט כערך. הבדיקה שכל משתנה קיים — ב-deploy-canary.sh.
+#
+#   ./set-canary-token.sh '<META TOKEN>'            # secret לטוקן — גם לחידוש
+#   ./deploy-canary.sh                               # source canary.env + stack deploy
+#   docker stack rm canary                           # מוריד הכול, whqueue לא מושפע
+#
+#   canary-runner  liorgr/phone-orchestrator ב-Mode=canary. קורא את canary_control
+#                  מה-DB כל 30 שניות (enabled, interval, שעות, run_now) ומריץ סבבים.
+#   canary-prober  whatsapp-cloudapi — טלפון ה-canary. נרשם ב-whqueue, צורך את
+#                  ה-subject שלו מ-nats-1, שולח את התבנית ומעביר ACK ל-runner.
+#   canary-redis   ה-webhook store של ה-prober (SET webhooks:{PHONE_ID}).
+#
+# סודות ב-docker secret ולא ב-env (env נחשף ב-docker service inspect):
+#   canary_wa_token      טוקן מטא. מוחלף ב-set-canary-token.sh (שם עם גרסה).
+#   canary_supabase_key  service-role key של ה-runner.
+#
+# שום דבר לא מפורסם החוצה. ה-dashboard ב-michal רק קורא/כותב את canary_control.
+
+version: "3.8"
+
+services:
+
+  canary-runner:
+    image: liorgr/phone-orchestrator:${ORCH_TAG:-latest}
+    networks: [whqueue-net]
+    environment:
+      ASPNETCORE_URLS:                  http://+:8080
+      Orchestrator__Mode:               canary
+      Orchestrator__CanaryEnabled:      "true"   # מריץ runner; הפעלה בפועל = canary_control.enabled
+      Orchestrator__SupabaseUrl:        ${SUPABASE_URL}
+      # Orchestrator__SupabaseKey — מ-/run/secrets/supabase_key (Program.cs)
+      Orchestrator__CanaryProberUrl:    http://canary-prober:8000
+      Orchestrator__CanaryProberNumber: ${CANARY_PHONE_NUMBER}
+      Orchestrator__CanaryHostId:       ${CANARY_HOST_ID}
+      Orchestrator__CanaryCallbackUrl:  http://canary-runner:8080
+      Orchestrator__CanaryInboundToken: ${CANARY_INBOUND_TOKEN}
+      Orchestrator__AuthPassword:       ${CANARY_RUNNER_PASSWORD}
+    secrets:
+      - source: canary_supabase_key
+        target: supabase_key
+    deploy:
+      replicas: 1        # שניים = כל טלפון מקבל שני CHECK בכל סבב
+      placement:
+        constraints:
+          - node.hostname == ${NATS_NODE:-botinbound}
+      update_config: { order: stop-first, failure_action: rollback }
+      restart_policy: { condition: any, delay: 5s }
+      resources: { limits: { memory: 256M } }
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  canary-prober:
+    image: liorgr/whatsapp-cloudapi:${CLOUDAPI_TAG:-latest}
+    networks: [whqueue-net]
+    # main.py קורא רק WA_ACCESS_TOKEN מה-env — העטיפה טוענת אותו מה-secret
+    # רגע לפני exec, כך שהוא לא מופיע ב-service inspect.
+    # ה-CMD המקורי של ה-image הוא python3 main.py — לאמת פעם אחת:
+    #   docker image inspect liorgr/whatsapp-cloudapi --format '{{json .Config.Entrypoint}} {{json .Config.Cmd}}'
+    entrypoint: ["/bin/sh", "-c", "WA_ACCESS_TOKEN=\"$$(cat /run/secrets/canary_wa_token)\" exec python3 main.py"]
+    environment:
+      PHONE_ID:             ${CANARY_PHONE_ID}
+      PHONE_NUMBER_ID:      ${CANARY_PHONE_NUMBER_ID}
+      WABA_ID:              ${CANARY_WABA_ID}
+      # ציבורי ו-https: ממנו נגזר גם ה-override אצל מטא ({…}/wa).
+      WHQUEUE_BASE_URL:     https://whqueue.grossman.bot
+      WHQUEUE_PHONE_TOKEN:  ${CANARY_WHQUEUE_PHONE_TOKEN}
+      WEBHOOK_VERIFY_TOKEN: ${WHQUEUE_VERIFY_TOKEN}
+      PUBLIC_BASE_URL:      http://canary-prober:8000
+      # ה-webhook היחיד — ה-runner. זהה בדיוק למה שה-runner רושם.
+      MANAGER_WEBHOOK_URL:  http://canary-runner:8080/canary/inbound/${CANARY_INBOUND_TOKEN}
+      REDIS_URL:            redis://canary-redis:6379/0
+      LOG_LEVEL:            ${CANARY_LOG_LEVEL:-INFO}
+    secrets:
+      - source: canary_wa_token
+        target: canary_wa_token
+    deploy:
+      replicas: 1        # שני צרכנים על אותו subject = כל ACK מטופל פעמיים
+      placement:
+        # אותו node כמו NATS ו-canary-redis.
+        constraints:
+          - node.hostname == ${NATS_NODE:-botinbound}
+      update_config: { order: stop-first }
+      restart_policy: { condition: any, delay: 5s }
+      resources: { limits: { memory: 256M } }
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8000/health',timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  canary-redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    networks: [whqueue-net]
+    volumes: [canary-redis-data:/data]
+    deploy:
+      replicas: 1
+      restart_policy: { condition: any, delay: 5s }
+      placement:
+        # volume מקומי — אותו node כמו NATS, כדי שלא יעלה ריק על node אחר.
+        constraints:
+          - node.hostname == ${NATS_NODE:-botinbound}
+      resources: { limits: { memory: 64M } }
+
+secrets:
+  # docker secret הוא immutable — כל החלפה יוצרת שם חדש עם תאריך, ו-
+  # set-canary-token.sh כותב אותו ל-canary.env (CANARY_WA_SECRET).
+  canary_wa_token:
+    external: true
+    name: ${CANARY_WA_SECRET}
+  canary_supabase_key:
+    external: true
+    name: canary_supabase_key
+
+networks:
+  whqueue-net:
+    external: true
+    name: whqueue-net
+
+volumes:
+  canary-redis-data:
