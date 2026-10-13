@@ -45,6 +45,7 @@ html, body {
 }
 
 .bar__id { display: flex; align-items: center; gap: 10px; }
+.mark { height: 18px; width: auto; flex: none; display: block; }
 
 .bar h1 {
   margin: 0;
@@ -314,6 +315,11 @@ html, body {
 .login__brand {
   margin: 0 0 4px; font-family: var(--mono); font-size: 15px; font-weight: 600;
   letter-spacing: .04em; direction: ltr; text-align: center;
+}
+.login__logo {
+  display: block;
+  width: 160px; height: 160px;
+  margin: 0 auto 4px;
 }
 .login__brand em { color: var(--muted); font-style: normal; }
 
