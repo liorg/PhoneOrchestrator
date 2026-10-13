@@ -18,7 +18,7 @@
 #   canary_supabase_key  service-role key של ה-runner.
 #
 # שום דבר לא מפורסם החוצה. ה-dashboard ב-michal רק קורא/כותב את canary_control.
-# SYBNC
+# synv canary.yml ב-whqueue — סנכרון אוטומטי מ-PhoneOrchestrator. כל שינוי ב-canary.yml
 
 version: "3.8"
 
