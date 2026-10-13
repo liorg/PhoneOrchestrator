@@ -23,6 +23,14 @@ curl -s -u admin:"$AUTH_PASSWORD" localhost:8090/api/hosts | jq '.items[] | {hos
 
 ```
 
+ה-service עלה, אבל הוא ב-0/1, כלומר ה-task לא רץ, ולכן /version לא ענה. הסיבה מופיעה באחת משתי הפקודות האלה:
+
+```bash
+sudo docker service ps orchestrator_orchestrator --no-trunc --format '{{.CurrentState}} | {{.Error}}' | head -5
+sudo docker service logs orchestrator_orchestrator --tail 40 2>&1 | tail -40
+```
+
+
 ```bash
 docker service ps orchestrator_orchestrator | head -3
 curl -s -o /dev/null -w '%{http_code}\n' localhost:8090/api/hosts
