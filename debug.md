@@ -1,7 +1,20 @@
-בדפדפן ב-NUC: http://localhost:8090
 
-או בטרמינל שני (לא באותו חלון):
 
+
+
+# DEPLOY ON WHQUEUE
+```bash
+sudo ./deploy-canary.sh
+```
+
+## UPDATE TOKEN
+```bash
+sudo ./set-canary-token.sh
+```
+
+# DEPLOY ON WEB (MICHAL)
+
+## HEALTH
 ```bash
 curl -s -o /dev/null -w '%{http_code}\n' localhost:8090/health
 
