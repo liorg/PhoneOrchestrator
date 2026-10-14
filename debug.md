@@ -80,3 +80,13 @@ sudo bash -c 'source .env; curl -s -u "${AUTH_USER:-admin}:$AUTH_PASSWORD" local
   | python3 -m json.tool | grep -E '"runnerAlive"|"runner_mode"|"prober_ready"|"enabled"|"runner_version"'
 sudo docker service logs orchestrator_orchestrator --since 2m 2>&1 | grep -c "botinbound unavailable"
 ```
+
+
+force pull
+```bash
+
+git fetch origin
+git reset --hard origin/main
+git clean -fd
+
+```

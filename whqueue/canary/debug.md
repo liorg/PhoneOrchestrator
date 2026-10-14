@@ -107,3 +107,12 @@ sudo docker stack rm canary
 select created_at, user_id, phone_id, title, message, log_level, is_read
 from notifications where source = 'canary' order by created_at desc limit 20;
 ```
+
+
+log send
+```bash
+sudo docker service logs canary_canary-prober --since 2h 2>&1 | grep -iE "template|check_id|wamid|status|error|972504476645" | tail -50
+
+sudo docker service logs canary_canary-runner --since 2h 2>&1 | grep -iE "canary|run |check|ack|send|timeout" | tail -50
+
+```
