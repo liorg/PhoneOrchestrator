@@ -105,4 +105,39 @@ public sealed class OrchestratorOptions
     /// michal. Whether it actually sweeps is canary_control.enabled, at runtime.
     /// </summary>
     public bool CanaryEnabled { get; set; } = false;
+
+    // ═════════════════════════════════════════════ notification email ══
+    //
+    // NotificationMailer: notifications (is_send=false) → Resend, per
+    // users.notify_email / notify_errors_only. Full mode (michal) only.
+
+    /// <summary>Master switch. false = the mailer does not start.</summary>
+    public bool NotifyEmailEnabled { get; set; } = false;
+
+    /// <summary>Resend API key. /run/secrets/resend_api_key wins over the env var.</summary>
+    public string ResendApiKey { get; set; } = "";
+
+    /// <summary>Sender - must be on a domain verified in Resend.</summary>
+    public string NotifyFromEmail { get; set; } = "noreply@mg.michal-solutions.com";
+
+    /// <summary>Name in the subject and the email header.</summary>
+    public string NotifyAppName { get; set; } = "ScenarioBot";
+
+    /// <summary>Frontend - the "open" button and the settings link.</summary>
+    public string NotifySiteUrl { get; set; } = "https://grossman.bot";
+
+    /// <summary>Time between sweeps of the queue.</summary>
+    public int NotifyIntervalSeconds { get; set; } = 60;
+
+    /// <summary>Rows read from the queue per sweep.</summary>
+    public int NotifyBatchSize { get; set; } = 200;
+
+    /// <summary>Most rows in one digest; the rest wait for the next sweep.</summary>
+    public int NotifyMaxItemsPerEmail { get; set; } = 20;
+
+    /// <summary>Older unsent rows are skipped ('stale') instead of mailed late.</summary>
+    public int NotifyMaxAgeHours { get; set; } = 24;
+
+    /// <summary>Tries per row on retryable errors (429 / 5xx / network).</summary>
+    public int NotifyMaxAttempts { get; set; } = 3;
 }

@@ -10,7 +10,8 @@ foreach (var (secretFile, configKey) in new[]
 {
     ("/run/secrets/supabase_key", "Orchestrator:SupabaseKey"),
     ("/run/secrets/supabase_url",         "Orchestrator:SupabaseUrl"),
-    ("/run/secrets/canary_inbound_token", "Orchestrator:CanaryInboundToken")
+    ("/run/secrets/canary_inbound_token", "Orchestrator:CanaryInboundToken"),
+    ("/run/secrets/resend_api_key",       "Orchestrator:ResendApiKey")
 })
 {
     if (File.Exists(secretFile))
@@ -30,6 +31,14 @@ var canaryOnly = string.Equals(builder.Configuration["Orchestrator:Mode"], "cana
                                StringComparison.OrdinalIgnoreCase);
 if (!canaryOnly)
     builder.Services.AddHostedService<OrchestratorLoop>();
+
+// ── notification email ───────────────────────────────────────────────
+// notifications → Resend. Full instance only, for the same reason as the
+// loop above; the claim in NotificationMailer makes a second one harmless
+// anyway. Starts only when Orchestrator__NotifyEmailEnabled=true.
+builder.Services.AddHttpClient<ResendClient>();
+if (!canaryOnly)
+    builder.Services.AddHostedService<NotificationMailer>();
 
 // ── canary ───────────────────────────────────────────────────────────
 // v2: Cloud API prober + CHECK template + ACK. No Redis, no Worker.

@@ -48,6 +48,17 @@ services:
       Orchestrator__Mode:                full
       Orchestrator__CanaryEnabled:       "false"
 
+      # ── notification email ──────────────────────────────────────────
+      # notifications → Resend, per users.notify_email / notify_errors_only.
+      # The key can also be a swarm secret named resend_api_key.
+      Orchestrator__NotifyEmailEnabled:  ${NOTIFY_EMAIL_ENABLED:-false}
+      Orchestrator__ResendApiKey:        ${RESEND_API_KEY:-}
+      Orchestrator__NotifyFromEmail:     ${FROM_EMAIL:-noreply@mg.michal-solutions.com}
+      Orchestrator__NotifyAppName:       ${APP_NAME:-ScenarioBot}
+      Orchestrator__NotifySiteUrl:       ${SITE_URL:-https://grossman.bot}
+      Orchestrator__NotifyIntervalSeconds: "60"
+      Orchestrator__NotifyMaxAgeHours:   "24"
+
     ports:
       - target: 8080
         published: 8090
