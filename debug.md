@@ -102,3 +102,20 @@ grep -q '^NOTIFY_EMAIL_ENABLED=' .env \
 grep -n '^NOTIFY_EMAIL_ENABLED\|^RESEND_API_KEY' .env
 
 ```
+
+FLAG SEND EMAIL
+
+```bash
+cd /opt/phone-orchestrator
+grep -q '^NOTIFY_EMAIL_ENABLED=' .env \
+  && sed -i 's/^NOTIFY_EMAIL_ENABLED=.*/NOTIFY_EMAIL_ENABLED=true/' .env \
+  || echo 'NOTIFY_EMAIL_ENABLED=true' >> .env
+grep -n '^NOTIFY_EMAIL_ENABLED\|^RESEND_API_KEY' .env
+
+```
+
+LOG EMAIL
+```bash
+./deploy.sh
+docker service logs --since 2m orchestrator_orchestrator 2>&1 | grep "\[MAIL\]"
+```
