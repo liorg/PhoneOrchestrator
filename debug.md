@@ -115,7 +115,19 @@ grep -n '^NOTIFY_EMAIL_ENABLED\|^RESEND_API_KEY' .env
 ```
 
 LOG EMAIL
+
 ```bash
 ./deploy.sh
 docker service logs --since 2m orchestrator_orchestrator 2>&1 | grep "\[MAIL\]"
 ```
+
+
+2. לכולם (מכבה את ה-mailer):
+
+```bash
+cd /opt/phone-orchestrator
+sed -i 's/^NOTIFY_EMAIL_ENABLED=.*/NOTIFY_EMAIL_ENABLED=false/' .env
+./deploy.sh
+docker service logs --since 2m orchestrator_orchestrator 2>&1 | grep "\[MAIL\]"
+```
+
