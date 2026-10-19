@@ -116,3 +116,32 @@ sudo docker service logs canary_canary-prober --since 2h 2>&1 | grep -iE "templa
 sudo docker service logs canary_canary-runner --since 2h 2>&1 | grep -iE "canary|run |check|ack|send|timeout" | tail -50
 
 ```
+
+all ports 
+```bash
+sudo docker ps --filter name=canary_ --format "table {{.ID}}\t{{.Names}}\t{{.Ports}}"
+
+```
+
+get health from container id (ID)
+```bash
+sudo docker exec 486eb8bd8c8e python -c "import urllib.request; r=urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5); print(r.status); print(r.read().decode())"
+
+```
+
+```bash
+sudo docker logs --tail 100 486eb8bd8c8e
+```
+
+LIST ENDPOINTS
+```bash
+sudo docker exec 486eb8bd8c8e python -c "import urllib.request,json; r=urllib.request.urlopen('http://127.0.0.1:8000/openapi.json', timeout=5); d=json.load(r); print('\n'.join(p for p in d['paths'] if 'template' in p.lower()))"
+```
+
+
+להצגת כל התבניות דרך /templates:
+
+```bash
+sudo docker exec 486eb8bd8c8e python -c "import urllib.request,json; r=urllib.request.urlopen('http://127.0.0.1:8000/templates', timeout=15); print(r.status); print(json.dumps(json.load(r), ensure_ascii=False, indent=2))"
+```
+
