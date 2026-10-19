@@ -42,7 +42,7 @@ services:
       Orchestrator__CanaryInboundToken: ${CANARY_INBOUND_TOKEN}
       Orchestrator__AuthPassword:       ${CANARY_RUNNER_PASSWORD}
       # ── OTP (2FA) — OtpSender. הכול אופציונלי; ברירות המחדל בקוד: ──
-      # Otp__Enabled:   "true"            # false = לא שולח OTP (ה-canary ממשיך)
+      Otp__Enabled:   "false"            # false = לא שולח OTP (ה-canary ממשיך)
       # Otp__Template:  check_number      # תבנית מאושרת ב-WABA של ה-prober
       # Otp__Language:  en
       # Otp__Body:      "{name}|{code}"   # {{1}}=שם, {{2}}=קוד. זמינים: {code} {name} {mobile}
