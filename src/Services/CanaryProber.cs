@@ -9,8 +9,8 @@ namespace PhoneOrchestrator.Services;
 /// The hop from PhoneOrchestrator to the prober - a whatsapp-cloudapi
 /// container that lives in the whqueue stack, on whqueue-net, next to NATS.
 ///
-/// Three calls and nothing else: /health before a sweep, /send/template per
-/// phone, and /webhooks reconciliation so the ACKs find their way back here.
+/// /health before a sweep, /send/template per phone (canary + OTP), and
+/// /webhooks reconciliation so the ACKs find their way back here.
 /// </summary>
 public sealed class CanaryProber
 {
@@ -89,22 +89,35 @@ public sealed class CanaryProber
 
     /// <summary>
     /// One CHECK per phone: the approved template with the code as its only
-    /// body parameter. params is {"body": [...]} - a dict, not a list.
+    /// body parameter.
     /// </summary>
-    public async Task<(bool ok, string? waMessageId, string? error)> SendCheckAsync(
+    public Task<(bool ok, string? waMessageId, string? error)> SendCheckAsync(
         string number, string template, string language, string code, CancellationToken ct)
+        => SendTemplateAsync(number, template, language, [code], null, ct);
+
+    /// <summary>
+    /// Any approved template. params is {"body": [...]} or {"header": [...], "body": [...]}
+    /// - a dict, not a list. Used by the canary (check_id) and by OTP (check_number).
+    /// </summary>
+    public async Task<(bool ok, string? waMessageId, string? error)> SendTemplateAsync(
+        string number, string template, string language,
+        string[] body, string[]? header, CancellationToken ct)
     {
-        var body = new
+        object prms = header is { Length: > 0 }
+            ? new { header, body }
+            : new { body };
+
+        var payload = new
         {
             jid      = ToJid(number),
             name     = template,
             language,
-            @params  = new { body = new[] { code } }
+            @params  = prms
         };
 
         try
         {
-            using var res = await _http.PostAsJsonAsync($"{Base}/send/template", body, ct);
+            using var res = await _http.PostAsJsonAsync($"{Base}/send/template", payload, ct);
             var raw = await res.Content.ReadAsStringAsync(ct);
 
             if (!res.IsSuccessStatusCode)
@@ -118,7 +131,8 @@ public sealed class CanaryProber
                 return (false, null, Trim(raw));
 
             var id = Read(root, "wa_message_id") ?? Read(root, "messageId")
-                  ?? Read(root, "message_id")    ?? Read(root, "id");
+                  ?? Read(root, "message_id")    ?? Read(root, "id")
+                  ?? FirstMessageId(root);
 
             // No wamid means Graph never accepted it, whatever the HTTP code.
             return string.IsNullOrWhiteSpace(id)
@@ -130,6 +144,14 @@ public sealed class CanaryProber
             return (false, null, Trim(ex.Message));
         }
     }
+
+    /// <summary>Raw Graph shape: {"messages":[{"id":"wamid..."}]}.</summary>
+    private static string? FirstMessageId(JsonElement root) =>
+        root.ValueKind == JsonValueKind.Object
+        && root.TryGetProperty("messages", out var m) && m.ValueKind == JsonValueKind.Array
+        && m.GetArrayLength() > 0
+            ? Read(m[0], "id")
+            : null;
 
     // ════════════════════════════════════════════════════════ webhook ══
 

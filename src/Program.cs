@@ -46,6 +46,12 @@ builder.Services.AddSingleton<CanaryStore>();
 builder.Services.AddHttpClient<CanaryProber>();
 builder.Services.AddHostedService<CanaryLoop>();
 
+// ── OTP (2FA) ────────────────────────────────────────────────────────
+// otp_requests → check_number template through the prober. botinbound only:
+// the prober is reachable only on whqueue-net. Otp__Enabled=false turns it off.
+if (canaryOnly)
+    builder.Services.AddHostedService<OtpSender>();
+
 builder.Services.AddControllers();
 
 var app = builder.Build();
