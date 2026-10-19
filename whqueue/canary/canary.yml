@@ -9,8 +9,10 @@
 #
 #   canary-runner  liorgr/phone-orchestrator ב-Mode=canary. קורא את canary_control
 #                  מה-DB כל 30 שניות (enabled, interval, שעות, run_now) ומריץ סבבים.
+#                  בנוסף: OtpSender — שולח קודי OTP של 2FA מ-otp_requests דרך ה-prober.
 #   canary-prober  whatsapp-cloudapi — טלפון ה-canary. נרשם ב-whqueue, צורך את
 #                  ה-subject שלו מ-nats-1, שולח את התבנית ומעביר ACK ל-runner.
+#                  משמש גם לשליחת OTP (תבנית check_number).
 #   canary-redis   ה-webhook store של ה-prober (SET webhooks:{PHONE_ID}).
 #
 # סודות ב-docker secret ולא ב-env (env נחשף ב-docker service inspect):
@@ -39,6 +41,13 @@ services:
       Orchestrator__CanaryCallbackUrl:  http://canary-runner:8080
       Orchestrator__CanaryInboundToken: ${CANARY_INBOUND_TOKEN}
       Orchestrator__AuthPassword:       ${CANARY_RUNNER_PASSWORD}
+      # ── OTP (2FA) — OtpSender. הכול אופציונלי; ברירות המחדל בקוד: ──
+      # Otp__Enabled:   "true"            # false = לא שולח OTP (ה-canary ממשיך)
+      # Otp__Template:  check_number      # תבנית מאושרת ב-WABA של ה-prober
+      # Otp__Language:  en
+      # Otp__Body:      "{name}|{code}"   # {{1}}=שם, {{2}}=קוד. זמינים: {code} {name} {mobile}
+      # Otp__Header:    ""                # ריק = בלי משתנים ב-header
+      # Otp__PollSec:   "2"
     secrets:
       - source: canary_supabase_key
         target: supabase_key
