@@ -63,6 +63,11 @@ begin
   if length(v_mobile) < 9 then return jsonb_build_object('ok', false, 'code', 'NO_MOBILE'); end if;
   if v_user.two_factor_verified then return jsonb_build_object('ok', false, 'code', 'ALREADY_VERIFIED'); end if;
 
+  -- the 2FA mobile must not be one of this user's bot phones (rows from before the trigger)
+  if exists (select 1 from phones p where p.user_id = p_user_id and norm_mobile(p.number) = v_mobile) then
+    return jsonb_build_object('ok', false, 'code', 'MOBILE_IS_BOT_PHONE');
+  end if;
+
   select max(created_at) into v_last from otp_requests
    where user_id = p_user_id and send_status <> 'failed';
   if v_last > now() - make_interval(secs => p_resend_sec) then
@@ -159,6 +164,16 @@ create or replace function public.trg_users_mobile_reset_2fa()
 returns trigger language plpgsql as $$
 begin
   if norm_mobile(new.mobile) is distinct from norm_mobile(old.mobile) then
+    -- the 2FA mobile is per user and must not be one of that user's bot phones.
+    -- The other direction (provisioning that number as a bot phone) is blocked in routers/phones.py.
+    if norm_mobile(new.mobile) <> '' and exists (
+         select 1 from phones p
+          where p.user_id = new.id and norm_mobile(p.number) = norm_mobile(new.mobile)) then
+      raise exception 'MOBILE_IS_BOT_PHONE'
+        using errcode = 'P0001',
+              hint = 'This number is one of your bot phones and cannot be used for two-step verification';
+    end if;
+
     new.two_factor_verified    := false;
     new.two_factor_verified_at := null;
     update otp_requests set expires_at = least(expires_at, now()), code = null
@@ -171,6 +186,17 @@ drop trigger if exists users_mobile_reset_2fa on public.users;
 create trigger users_mobile_reset_2fa before update of mobile on public.users
   for each row execute function public.trg_users_mobile_reset_2fa();
 
+-- ── provision: is this number the user's 2FA mobile? ─────────────────────
+-- phones.py calls this before provisioning. Same norm_mobile as everywhere else,
+-- so Python keeps no copy of the rule.
+create or replace function public.rpc_is_2fa_mobile(p_user_id uuid, p_number text)
+returns boolean language sql stable security definer set search_path = public as $$
+  select coalesce((
+    select norm_mobile(u.mobile) <> '' and norm_mobile(u.mobile) = norm_mobile(p_number)
+      from users u
+     where u.id = p_user_id), false)
+$$;
+
 -- ── service_role only ────────────────────────────────────────────────────
 revoke all on function public.rpc_otp_request(uuid, text, text, int, int, int, int) from public, anon, authenticated;
 revoke all on function public.rpc_otp_claim(int)                                   from public, anon, authenticated;
@@ -180,3 +206,5 @@ grant execute on function public.rpc_otp_request(uuid, text, text, int, int, int
 grant execute on function public.rpc_otp_claim(int)                                   to service_role;
 grant execute on function public.rpc_otp_mark_sent(uuid, text, text)                  to service_role;
 grant execute on function public.rpc_otp_verify(uuid, text)                           to service_role;
+revoke all on function public.rpc_is_2fa_mobile(uuid, text) from public, anon, authenticated;
+grant execute on function public.rpc_is_2fa_mobile(uuid, text) to service_role;
