@@ -23,10 +23,11 @@ namespace PhoneOrchestrator.Services;
 /// One email per user per sweep - a digest of up to NotifyMaxItemsPerEmail
 /// rows - so a burst of call summaries is one mail, not twenty.
 ///
-/// Delivery is at-most-once. Rows are claimed (is_send=false → true) with a
-/// compare-and-set before the send, so two instances never mail the same row;
-/// a crash between claim and send leaves the row at 'sending' rather than
-/// risking a duplicate.
+/// Selection, filtering and claiming are one RPC (rpc_notify_claim_batch):
+/// it returns only rows that are valid to send, already claimed with
+/// FOR UPDATE SKIP LOCKED, so two instances never mail the same row.
+/// Delivery is at-most-once: a crash between claim and send leaves the row
+/// at 'sending' rather than risking a duplicate.
 ///
 /// Runs on the "full" instance only (michal) - see Program.cs.
 /// </summary>
@@ -45,9 +46,6 @@ public sealed class NotificationMailer : BackgroundService
         _opt    = opt.Value;
         _log    = log;
     }
-
-    private static readonly HashSet<string> ErrorLevels =
-        new(StringComparer.OrdinalIgnoreCase) { "error", "critical", "fatal" };
 
     protected override async Task ExecuteAsync(CancellationToken ct)
     {
@@ -88,185 +86,92 @@ public sealed class NotificationMailer : BackgroundService
     // ═══════════════════════════════════════════════════════════ sweep ══
 
     private sealed record Row(
-        Guid Id, Guid? UserId, string Title, string Message, string Level,
+        Guid Id, Guid UserId, string Title, string Message, string Level,
         DateTime CreatedUtc, int Attempts);
 
-    private sealed record User(
-        Guid Id, string? Email, string Lang, bool NotifyEmail, bool ErrorsOnly, string TimeZone);
+    private sealed record User(Guid Id, string Email, string Lang, string TimeZone);
 
+    /// <summary>
+    /// One RPC does stale + eligibility + claim and returns only rows that are
+    /// valid to send, joined with their owner (sql/rpc_notify_claim_batch.sql).
+    /// Per sweep: 1 round trip, then 1 send + 1 status write per user.
+    /// </summary>
     private async Task SweepAsync(CancellationToken ct)
     {
         using var scope = _scopes.CreateScope();
         var rpc    = scope.ServiceProvider.GetRequiredService<SupabaseRpc>();
         var resend = scope.ServiceProvider.GetRequiredService<ResendClient>();
 
-        // ── 1. too old to be useful → out of the queue without a mail ─────
-        var cutoff = DateTime.UtcNow.AddHours(-Math.Max(1, _opt.NotifyMaxAgeHours));
-        await rpc.PatchAsync("notifications",
-            $"is_send=eq.false&created_at=lt.{Uri.EscapeDataString(cutoff.ToString("o"))}",
-            new { is_send = true, email_status = "skipped", email_error = "stale" }, ct);
+        var raw = await rpc.CallAsync("rpc_notify_claim_batch", new
+        {
+            p_max_age_hours = Math.Max(1, _opt.NotifyMaxAgeHours),
+            p_batch         = Math.Max(1, _opt.NotifyBatchSize),
+            p_per_user      = Math.Max(1, _opt.NotifyMaxItemsPerEmail)
+        }, ct);
 
-        // ── 2. queue ──────────────────────────────────────────────────────
-        var raw = await rpc.SelectAsync("notifications",
-            "select=id,user_id,title,message,log_level,created_at,email_attempts" +
-            $"&is_send=eq.false&order=created_at.asc&limit={Math.Max(1, _opt.NotifyBatchSize)}", ct);
+        if (raw.ValueKind != JsonValueKind.Array || raw.GetArrayLength() == 0) return;
 
-        var rows = raw.EnumerateArray().Select(ParseRow).Where(r => r != null).Select(r => r!).ToList();
-        if (rows.Count == 0) return;
+        var users = new Dictionary<Guid, User>();
+        var rows  = new List<Row>();
+        foreach (var r in raw.EnumerateArray())
+        {
+            if (!Guid.TryParse(Str(r, "id"), out var id) || !Guid.TryParse(Str(r, "user_id"), out var uid)) continue;
 
-        // ── 3. owners ─────────────────────────────────────────────────────
-        var userIds = rows.Where(r => r.UserId.HasValue).Select(r => r.UserId!.Value).Distinct().ToList();
-        var users   = await LoadUsersAsync(rpc, userIds, ct);
+            rows.Add(new Row(id, uid, Str(r, "title"), Str(r, "message"), Str(r, "log_level"),
+                ParseUtc(Str(r, "created_at")),
+                r.TryGetProperty("email_attempts", out var a) && a.ValueKind == JsonValueKind.Number ? a.GetInt32() : 0));
 
-        int sent = 0, skipped = 0, failed = 0;
+            users.TryAdd(uid, new User(uid, Str(r, "email"), Str(r, "lang"), Str(r, "timezone")));
+        }
+
+        int sent = 0, failed = 0;
 
         foreach (var group in rows.GroupBy(r => r.UserId))
         {
             if (ct.IsCancellationRequested) break;
-            var items = group.ToList();
 
-            if (group.Key is not { } uid)
-            {
-                skipped += await SkipAsync(rpc, items, "no_user", ct);
-                continue;
-            }
-            if (!users.TryGetValue(uid, out var user))
-            {
-                skipped += await SkipAsync(rpc, items, "user_not_found", ct);
-                continue;
-            }
-            if (!user.NotifyEmail)
-            {
-                skipped += await SkipAsync(rpc, items, "notify_email_off", ct);
-                continue;
-            }
-            if (string.IsNullOrWhiteSpace(user.Email))
-            {
-                skipped += await SkipAsync(rpc, items, "no_email", ct);
-                continue;
-            }
-
-            var wanted = user.ErrorsOnly ? items.Where(r => ErrorLevels.Contains(r.Level)).ToList() : items;
-            if (wanted.Count < items.Count)
-                skipped += await SkipAsync(rpc, items.Except(wanted).ToList(), "errors_only", ct);
-            if (wanted.Count == 0) continue;
-
-            // Cap per mail; the rest stay queued for the next sweep.
-            wanted = wanted.Take(Math.Max(1, _opt.NotifyMaxItemsPerEmail)).ToList();
-
-            var claimed = await ClaimAsync(rpc, wanted, ct);
-            if (claimed.Count == 0) continue;
+            var user    = users[group.Key];
+            var claimed = group.ToList();
 
             var (subject, html) = MailTemplate.Render(user, claimed, _opt);
             var (ok, retryable, error) = await resend.SendAsync(
-                user.Email!, subject, html, IdempotencyKey(claimed), ct);
+                user.Email, subject, html, IdempotencyKey(claimed), ct);
 
             if (ok)
             {
                 await rpc.PatchAsync("notifications", IdFilter(claimed), new
                 {
-                    email_status = "sent",
-                    emailed_at   = DateTime.UtcNow,
+                    email_status   = "sent",
+                    emailed_at     = DateTime.UtcNow,
                     email_attempts = claimed.Max(r => r.Attempts) + 1
                 }, ct);
                 sent += claimed.Count;
-                _log.LogInformation("[MAIL] Sent {Count} notification(s) to user {User}", claimed.Count, uid);
+                _log.LogInformation("[MAIL] Sent {Count} notification(s) to user {User}", claimed.Count, user.Id);
             }
             else
             {
                 failed += await FailAsync(rpc, claimed, retryable, error, ct);
-                _log.LogWarning("[MAIL] Send to user {User} failed (retryable={Retry}): {Error}", uid, retryable, error);
+                _log.LogWarning("[MAIL] Send to user {User} failed (retryable={Retry}): {Error}", user.Id, retryable, error);
             }
 
             // Resend's default limit is 2 req/s.
             if (!await Delay(TimeSpan.FromMilliseconds(600), ct)) break;
         }
 
-        if (sent + skipped + failed > 0)
-            _log.LogInformation("[MAIL] Sweep | sent={Sent} skipped={Skipped} failed={Failed}", sent, skipped, failed);
+        _log.LogInformation("[MAIL] Sweep | sent={Sent} failed={Failed}", sent, failed);
     }
 
     // ══════════════════════════════════════════════════════════ helpers ══
 
-    private static Row? ParseRow(JsonElement r)
-    {
-        if (!r.TryGetProperty("id", out var idEl) || !Guid.TryParse(idEl.GetString(), out var id)) return null;
-
-        Guid? uid = r.TryGetProperty("user_id", out var u) && u.ValueKind == JsonValueKind.String
-                    && Guid.TryParse(u.GetString(), out var ug) ? ug : null;
-
-        var created = r.TryGetProperty("created_at", out var c) && c.ValueKind == JsonValueKind.String
-                      && DateTime.TryParse(c.GetString(), CultureInfo.InvariantCulture,
-                             DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal, out var d)
-            ? d : DateTime.UtcNow;
-
-        return new Row(
-            id, uid,
-            Str(r, "title"), Str(r, "message"),
-            Str(r, "log_level") is { Length: > 0 } lvl ? lvl : "info",
-            created,
-            r.TryGetProperty("email_attempts", out var a) && a.ValueKind == JsonValueKind.Number ? a.GetInt32() : 0);
-    }
-
     private static string Str(JsonElement r, string k) =>
         r.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? "" : "";
 
-    private static async Task<Dictionary<Guid, User>> LoadUsersAsync(
-        SupabaseRpc rpc, List<Guid> ids, CancellationToken ct)
-    {
-        var map = new Dictionary<Guid, User>();
-        if (ids.Count == 0) return map;
-
-        var rows = await rpc.SelectAsync("users",
-            "select=id,email,lang,notify_email,notify_errors_only,timezone" +
-            $"&id=in.({string.Join(",", ids)})", ct);
-
-        foreach (var r in rows.EnumerateArray())
-        {
-            if (!Guid.TryParse(Str(r, "id"), out var id)) continue;
-
-            bool B(string k, bool d) =>
-                r.TryGetProperty(k, out var v) && v.ValueKind is JsonValueKind.True or JsonValueKind.False
-                    ? v.GetBoolean() : d;
-
-            map[id] = new User(
-                id,
-                Str(r, "email"),
-                Str(r, "lang") is { Length: > 0 } l ? l : "he",
-                B("notify_email", false),
-                // null means the UI default: errors only.
-                B("notify_errors_only", true),
-                Str(r, "timezone") is { Length: > 0 } tz ? tz : "Asia/Jerusalem");
-        }
-        return map;
-    }
+    private static DateTime ParseUtc(string s) =>
+        DateTime.TryParse(s, CultureInfo.InvariantCulture,
+            DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal, out var d) ? d : DateTime.UtcNow;
 
     private static string IdFilter(IEnumerable<Row> rows) =>
         $"id=in.({string.Join(",", rows.Select(r => r.Id))})";
-
-    /// <summary>
-    /// is_send false → true with the old value in the filter: the second of
-    /// two concurrent claimers gets back only what it actually won.
-    /// </summary>
-    private static async Task<List<Row>> ClaimAsync(SupabaseRpc rpc, List<Row> rows, CancellationToken ct)
-    {
-        var won = await rpc.PatchReturningAsync("notifications",
-            IdFilter(rows) + "&is_send=eq.false",
-            new { is_send = true, email_status = "sending" }, ct);
-
-        var ids = won.EnumerateArray()
-            .Select(r => Guid.TryParse(Str(r, "id"), out var g) ? g : Guid.Empty)
-            .ToHashSet();
-        return rows.Where(r => ids.Contains(r.Id)).ToList();
-    }
-
-    private static async Task<int> SkipAsync(SupabaseRpc rpc, List<Row> rows, string reason, CancellationToken ct)
-    {
-        if (rows.Count == 0) return 0;
-        await rpc.PatchAsync("notifications", IdFilter(rows) + "&is_send=eq.false",
-            new { is_send = true, email_status = "skipped", email_error = reason }, ct);
-        return rows.Count;
-    }
 
     private async Task<int> FailAsync(
         SupabaseRpc rpc, List<Row> rows, bool retryable, string? error, CancellationToken ct)
