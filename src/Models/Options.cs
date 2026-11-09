@@ -52,6 +52,18 @@ public sealed class OrchestratorOptions
     public string AuthPassword { get; set; } = "";
 
     /// <summary>
+    /// phone-hub (the docker on the NUC) — basic auth for /api/hub/* only.
+    /// These credentials open nothing else, and the dashboard ones do not open /api/hub/*.
+    /// </summary>
+    public string HubUser { get; set; } = "hub";
+
+    /// <summary>
+    /// Empty = /api/hub/* answers 503 (closed, never open).
+    /// /run/secrets/hub_password wins over Orchestrator__HubPassword.
+    /// </summary>
+    public string HubPassword { get; set; } = "";
+
+    /// <summary>
     /// Master switch. false = observe and report only, never touch phones.
     /// Ships false on purpose - flip it once you trust the dashboard.
     /// </summary>

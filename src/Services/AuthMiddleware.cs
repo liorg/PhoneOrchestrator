@@ -17,9 +17,17 @@ namespace PhoneOrchestrator.Services;
 /// than answered with 401, which is what stops the browser from popping its
 /// own credentials dialog. API requests still get a clean 401 so callers can
 /// detect an expired session instead of parsing an HTML page.
+///
+/// /api/hub/* (phone-hub on the NUC) is a separate realm: only HubUser /
+/// HubPassword get in, and those credentials open nothing else. The dashboard
+/// cookie and AuthUser / AuthPassword do not open /api/hub/*. An empty
+/// HubPassword closes the hub routes - it never opens them, even when the
+/// dashboard auth is off.
 /// </summary>
 public sealed class AuthMiddleware
 {
+    private const string HubPrefix = "/api/hub/";
+
     private readonly RequestDelegate _next;
     private readonly OrchestratorOptions _opt;
     private readonly AuthTokens _tokens;
@@ -52,6 +60,30 @@ public sealed class AuthMiddleware
 
     public async Task InvokeAsync(HttpContext ctx)
     {
+        var path = ctx.Request.Path.Value ?? "";
+
+        // ── phone-hub: its own credentials, checked before the "auth off" shortcut
+        if (path.StartsWith(HubPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            if (string.IsNullOrEmpty(_opt.HubPassword))
+            {
+                ctx.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+                await ctx.Response.WriteAsJsonAsync(new { ok = false, error = "Hub access is not configured." });
+                return;
+            }
+
+            if (HasBasicAuth(ctx, _opt.HubUser, _opt.HubPassword))
+            {
+                await _next(ctx);
+                return;
+            }
+
+            _log.LogWarning("Rejected hub call {Path} from {Ip}", path, ctx.Connection.RemoteIpAddress);
+            ctx.Response.StatusCode = StatusCodes.Status401Unauthorized;
+            await ctx.Response.WriteAsJsonAsync(new { ok = false, error = "Not authorized." });
+            return;
+        }
+
         // No password configured means auth is off. Program.cs warns loudly
         // at startup so this cannot be an accident nobody notices.
         if (string.IsNullOrEmpty(_opt.AuthPassword))
@@ -59,8 +91,6 @@ public sealed class AuthMiddleware
             await _next(ctx);
             return;
         }
-
-        var path = ctx.Request.Path.Value ?? "";
 
         // The prober's callbacks carry no credentials. CanaryController
         // checks the path token itself and answers 404 without it.
@@ -72,7 +102,7 @@ public sealed class AuthMiddleware
         }
 
         if (_tokens.TryValidate(ctx.Request.Cookies[AuthTokens.CookieName], out _)
-            || HasValidBasicAuth(ctx))
+            || HasBasicAuth(ctx, _opt.AuthUser, _opt.AuthPassword))
         {
             await _next(ctx);
             return;
@@ -88,7 +118,7 @@ public sealed class AuthMiddleware
         ctx.Response.Redirect("/login.html");
     }
 
-    private bool HasValidBasicAuth(HttpContext ctx)
+    private static bool HasBasicAuth(HttpContext ctx, string user, string password)
     {
         var raw = ctx.Request.Headers.Authorization.ToString();
         if (string.IsNullOrWhiteSpace(raw)) return false;
@@ -111,8 +141,11 @@ public sealed class AuthMiddleware
         var split = decoded.IndexOf(':');
         if (split < 0) return false;
 
-        return FixedEquals(decoded[..split], _opt.AuthUser)
-            && FixedEquals(decoded[(split + 1)..], _opt.AuthPassword);
+        // Both compared, always - && would skip the password on a wrong user
+        // and leak through timing which part was wrong.
+        var userOk = FixedEquals(decoded[..split], user);
+        var passOk = FixedEquals(decoded[(split + 1)..], password);
+        return userOk & passOk;
     }
 
     private static bool FixedEquals(string a, string b) =>

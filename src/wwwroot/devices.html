@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PhoneOrchestrator · מכשירים</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="bar">
+  <div class="bar__id">
+    <span class="dot" id="pulse" aria-hidden="true"></span>
+    <svg class="mark" viewBox="0 0 58 18" aria-hidden="true">
+      <path d="M1 16.5 L8 2 L15 16.5 Z" fill="#A146FF" stroke="#A146FF" stroke-width="1.5" stroke-linejoin="round"/>
+      <circle cx="29" cy="9.5" r="7.5" fill="#2391FF"/>
+      <rect x="41" y="2" width="15.5" height="15" rx="3" fill="#0FF0FF"/>
+    </svg>
+    <h1>Phone<em>Orchestrator</em></h1>
+  </div>
+
+  <nav class="nav">
+    <a href="/">שרתים</a>
+    <a href="/devices.html" aria-current="page">מכשירים</a>
+    <a href="/canary.html">בדיקות</a>
+  </nav>
+
+  <dl class="bar__meta">
+    <div><dt>סריקה אחרונה</dt><dd id="m-scan">—</dd></div>
+    <div><dt>סביבה</dt><dd id="m-env">—</dd></div>
+    <div><dt>build</dt><dd id="m-marker">—</dd></div>
+  </dl>
+  <button class="bar__out" id="logout">יציאה</button>
+</header>
+
+<p class="banner" id="banner" hidden></p>
+<p class="banner banner--ok" id="notice" hidden></p>
+
+<!-- -------------------------------------------------------- devices view -->
+<main class="view" id="view-devices">
+  <div class="view__head">
+    <h2>מכשירים פיזיים</h2>
+    <div class="pager" id="devicePager"></div>
+  </div>
+  <div id="devices">
+    <p class="empty">טוען מכשירים…</p>
+  </div>
+</main>
+
+<!-- ----------------------------------------------------------- sims view -->
+<main class="view" id="view-sims" hidden>
+  <div class="view__head">
+    <button class="back" id="back">חזרה למכשירים</button>
+  </div>
+
+  <div class="hostbar" id="devicebar"></div>
+
+  <div id="sims">
+    <p class="empty">טוען…</p>
+  </div>
+</main>
+
+<script src="devices.js"></script>
+</body>
+</html>

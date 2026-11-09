@@ -11,7 +11,8 @@ foreach (var (secretFile, configKey) in new[]
     ("/run/secrets/supabase_key", "Orchestrator:SupabaseKey"),
     ("/run/secrets/supabase_url",         "Orchestrator:SupabaseUrl"),
     ("/run/secrets/canary_inbound_token", "Orchestrator:CanaryInboundToken"),
-    ("/run/secrets/resend_api_key",       "Orchestrator:ResendApiKey")
+    ("/run/secrets/resend_api_key",       "Orchestrator:ResendApiKey"),
+    ("/run/secrets/hub_password",         "Orchestrator:HubPassword")
 })
 {
     if (File.Exists(secretFile))
