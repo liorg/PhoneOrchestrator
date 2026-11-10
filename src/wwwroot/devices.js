@@ -213,10 +213,11 @@ function simRow(s) {
     <td>${cell(s.linked_name)}</td>
     <td>${ownerCell(s)}</td>
     <td>${pullTag(s.pull)}</td>
-    <td><div class="row">
+    <td><div class="row row--actions">
       <button class="chip" data-act="reverify" data-sim="${esc(s.id)}" ${canVerify ? '' : 'disabled'}>אימות מחדש</button>
       <button class="chip chip--bad" data-act="release" data-sim="${esc(s.id)}"
-              data-who="${esc(s.owner?.email || '')}" ${canRelease ? '' : 'disabled'}>ניתוק מהלקוח</button>
+              data-who="${esc(s.owner?.email || '')}" data-number="${esc(s.phone_number || '')}"
+              ${canRelease ? '' : 'disabled'}>ניתוק מהלקוח</button>
     </div></td>
   </tr>`;
 }
@@ -237,7 +238,7 @@ async function loadSims() {
       : '<p class="empty">עוד לא זוהה SIM במכשיר.</p>';
 
     document.querySelectorAll('#sims [data-act]').forEach((b) => {
-      b.addEventListener('click', () => act(b.dataset.act, b.dataset.sim, b.dataset.who));
+      b.addEventListener('click', () => act(b.dataset.act, b.dataset.sim, b.dataset.who, b.dataset.number));
     });
 
     clearFail();
@@ -246,10 +247,21 @@ async function loadSims() {
   }
 }
 
-async function act(kind, simId, who) {
-  if (kind === 'release' &&
-      !confirm(`לנתק מהלקוח ${who || ''}?\nכל אנשי הקשר, התרחישים, התזמונים וה-SMS של הטלפון יימחקו, והוא יחזור ל-system.`))
-    return;
+async function act(kind, simId, who, number) {
+  // מחיקה בלתי הפיכה — אישור בהקלדת המספר, לא בלחיצה
+  if (kind === 'release') {
+    const typed = prompt(
+      `ניתוק מהלקוח ${who || ''}\n\n` +
+      `כל אנשי הקשר, התרחישים, התזמונים, ההודעות וה-SMS של ${number} יימחקו לצמיתות,\n` +
+      `והטלפון יחזור ל-system. אין שחזור.\n\n` +
+      `להמשך — הקלד את המספר (${number}):`);
+    if (typed === null) return;
+    const digits = (x) => String(x || '').replace(/\D/g, '');
+    if (!digits(typed) || digits(typed) !== digits(number)) {
+      fail('המספר לא תאם — לא בוצע ניתוק');
+      return;
+    }
+  }
 
   state.busy.add(simId);
   loadSims();

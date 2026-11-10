@@ -468,3 +468,20 @@ html, body {
   direction: ltr; text-align: start;
   overflow-x: auto; white-space: pre; max-height: 240px;
 }
+/* ════════════════════════════════════════════════════════════════════════
+   Append to styles.css - devices page (devices.html).
+   ════════════════════════════════════════════════════════════════════════ */
+
+.banner--ok {
+  background: rgba(79,193,166,.10);
+  border-bottom-color: var(--ok);
+  color: var(--ok);
+}
+
+.chip:disabled { opacity: .35; cursor: default; }
+.chip:disabled:hover { color: var(--muted); border-color: var(--rule); }
+.chip--bad:hover:not(:disabled) { color: var(--bad); border-color: var(--bad); }
+.tbl td .row { flex-wrap: nowrap; }
+
+/* הכפתור ההרסני רחוק מהבטוח */
+.row--actions { gap: 28px; }
