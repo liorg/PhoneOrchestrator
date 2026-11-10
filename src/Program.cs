@@ -26,6 +26,8 @@ builder.Services.AddDataProtection();
 builder.Services.AddSingleton<AuthTokens>();
 builder.Services.AddHttpClient<SupabaseRpc>();
 builder.Services.AddHttpClient<HostProbe>();
+// re-verify: pair code from the phone's Manager (HubController → /api/hub/pulls/{id}/paircode)
+builder.Services.AddHttpClient<PairCodeProvisioner>();
 // Mode=canary (botinbound) runs the canary runner only - two instances
 // probing and draining the same hosts would race each other.
 var canaryOnly = string.Equals(builder.Configuration["Orchestrator:Mode"], "canary",

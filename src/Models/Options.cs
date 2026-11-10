@@ -64,6 +64,18 @@ public sealed class OrchestratorOptions
     public string HubPassword { get; set; } = "";
 
     /// <summary>
+    /// POST /api/devices/selftest — end-to-end test of the rented-phones flow with fake data
+    /// (SELFTEST-* device, +999… numbers) against the real DB. Off by default.
+    /// </summary>
+    public bool SelfTestEnabled { get; set; } = false;
+
+    /// <summary>
+    /// Testing only, until the provisioner exists: /api/hub/pulls/{id}/paircode answers
+    /// this fixed code. Honoured only when SelfTestEnabled is true. Empty = 501.
+    /// </summary>
+    public string HubFakePairCode { get; set; } = "";
+
+    /// <summary>
     /// Master switch. false = observe and report only, never touch phones.
     /// Ships false on purpose - flip it once you trust the dashboard.
     /// </summary>
