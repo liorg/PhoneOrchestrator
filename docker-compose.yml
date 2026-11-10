@@ -48,6 +48,15 @@ services:
       Orchestrator__Mode:                full
       Orchestrator__CanaryEnabled:       "false"
 
+      # ── phone-hub (docker על ה-NUC) ─────────────────────────────────
+      # Basic auth ל-/api/hub/* בלבד — לא פותח את הדשבורד, והסיסמה של
+      # הדשבורד לא פותחת אותו. HUB_PASSWORD ריק → /api/hub/* מחזיר 503.
+      # אפשר גם swarm secret בשם hub_password — Program.cs מעדיף אותו.
+      Orchestrator__HubUser:             ${HUB_USER:-hub}
+      Orchestrator__HubPassword:         ${HUB_PASSWORD:-}
+      # POST /api/devices/selftest — בדיקה עם נתוני fake. להחזיר ל-false אחרי.
+      Orchestrator__SelfTestEnabled:     ${SELFTEST_ENABLED:-false}
+
       # ── notification email ──────────────────────────────────────────
       # notifications → Resend, per users.notify_email / notify_errors_only.
       # The key can also be a swarm secret named resend_api_key.
