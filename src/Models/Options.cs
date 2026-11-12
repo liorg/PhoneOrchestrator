@@ -75,6 +75,21 @@ public sealed class OrchestratorOptions
     /// </summary>
     public string HubFakePairCode { get; set; } = "";
 
+    // ══════════════════════════════════════════════════════ rented phones ══
+    //
+    // RentSweeper: rpc_rent_sweep - warning to the customer at bot_config
+    // rent.warn_percent, expiry → wipe + back to the pool + error notification.
+    // Full mode (michal) only.
+
+    /// <summary>Master switch. false = the sweeper does not start.</summary>
+    public bool RentSweepEnabled { get; set; } = true;
+
+    /// <summary>Seconds between sweeps (minimum 10).</summary>
+    public int RentSweepSeconds { get; set; } = 30;
+
+    /// <summary>Templates the wipe keeps, comma separated. Empty = bot_config rent.keep_templates.</summary>
+    public string RentKeepTemplates { get; set; } = "";
+
     /// <summary>
     /// Master switch. false = observe and report only, never touch phones.
     /// Ships false on purpose - flip it once you trust the dashboard.
