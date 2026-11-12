@@ -43,6 +43,14 @@ builder.Services.AddHttpClient<ResendClient>();
 if (!canaryOnly)
     builder.Services.AddHostedService<NotificationMailer>();
 
+// ── rented phones ────────────────────────────────────────────────────
+// rpc_rent_sweep: warning at bot_config rent.warn_percent, expiry → pool,
+// notifications to the customer (mailed by NotificationMailer). Full instance
+// only; SKIP LOCKED in the RPC makes a second runner (DR) harmless.
+// Orchestrator__RentSweepEnabled=false turns it off.
+if (!canaryOnly)
+    builder.Services.AddHostedService<RentSweeper>();
+
 // ── canary ───────────────────────────────────────────────────────────
 // v2: Cloud API prober + CHECK template + ACK. No Redis, no Worker.
 builder.Services.AddSingleton<CanaryStore>();
