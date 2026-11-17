@@ -1,3 +1,4 @@
+using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Mvc;
@@ -12,7 +13,7 @@ namespace PhoneOrchestrator.Controllers;
 /// HubPassword - AuthMiddleware lets nothing else into /api/hub/*.
 ///
 ///   POST /api/hub/device-update          track-devices: add / remove + SIMs
-///   POST /api/hub/sms                    inbound SMS, idempotent by msg_id
+///   POST /api/hub/sms                    inbound SMS, idempotent by msg_id → forwarded to WhatsAppManager
 ///   POST /api/hub/pulls/claim            pending re-verifications of the connected serials
 ///   POST /api/hub/pulls/{id}/ack         old link removed → delete_old · none → ack
 ///   POST /api/hub/pulls/{id}/paircode    pair code from the phone's Manager (PairCodeProvisioner)
@@ -27,14 +28,19 @@ public sealed class HubController : ControllerBase
     private readonly SupabaseRpc _rpc;
     private readonly PairCodeProvisioner _pairing;
     private readonly OrchestratorOptions _opt;
+    private readonly IHttpClientFactory _httpFactory;
+    private readonly IConfiguration _cfg;
     private readonly ILogger<HubController> _log;
 
     public HubController(SupabaseRpc rpc, PairCodeProvisioner pairing, IOptions<OrchestratorOptions> opt,
+                         IHttpClientFactory httpFactory, IConfiguration cfg,
                          ILogger<HubController> log)
     {
         _rpc = rpc;
         _pairing = pairing;
         _opt = opt.Value;
+        _httpFactory = httpFactory;
+        _cfg = cfg;
         _log = log;
     }
 
@@ -63,10 +69,137 @@ public sealed class HubController : ControllerBase
         {
             _log.LogInformation("[HUB] sms {Msg} phone={Phone} from={From}",
                 Str(body, "msg_id"), Str(res, "phone_id"), Str(body, "from"));
-            // TODO (שלב 5): להעביר ל-WhatsAppManager → Worker כאירוע "sms received"
+
+            // שלב 5: SMS → WhatsAppManager → Spine → Worker.
+            // ברקע: ה-hub מקבל תשובה מיד, כשל בהעברה לא מחזיר לו שגיאה.
+            // idempotency כבר נשמר ב-rpc_sms_inbound (inserted=false בכפילות),
+            // ולכן לכל SMS יוצא אירוע אחד בלבד.
+            if (Guid.TryParse(Str(res, "phone_id"), out var phoneId))
+            {
+                var evt = BuildSmsEvent(body, res);
+                _ = Task.Run(() => ForwardSmsAsync(phoneId, evt));
+            }
+            else
+            {
+                _log.LogWarning("[HUB] sms {Msg} inserted without phone_id — not forwarded", Str(body, "msg_id"));
+            }
         }
         return Json(res);
     }
+
+    // ── SMS → WhatsAppManager ────────────────────────────────────────────────
+    // ה-Manager של הטלפון עצמו: phones.host_id → agent_hosts.ip_address, כמו ב-provisioner.
+    // Orchestrator:ManagerPort          ברירת מחדל 5000 (HostAgent, כמו AGENT_PORT ב-backend)
+    // Orchestrator:ManagerWebhookSecret זהה ל-AppSettings:WebhookSecret ב-Manager
+    // Orchestrator:AgentToken           זהה ל-AGENT_TOKEN של ה-backend (X-Agent-Token)
+
+    private static readonly int[] ForwardBackoffMs = { 0, 1000, 3000 };
+
+    private static object BuildSmsEvent(JsonObject body, JsonElement res) => new
+    {
+        msg_id      = Str(body, "msg_id"),
+        sms_id      = Str(res, "id") ?? Str(res, "sms_id"),
+        // טבלת sms: body = הטקסט, target_phone = השולח (כמו ב-rpc_sms_thread)
+        from        = Str(body, "from") ?? Str(body, "target_phone") ?? "",
+        text        = Str(body, "body") ?? Str(body, "text") ?? Str(body, "message") ?? "",
+        received_at = Str(body, "received_at") ?? Str(body, "delivery_date") ?? DateTimeOffset.UtcNow.ToString("o"),
+        raw         = body,
+    };
+
+    private async Task ForwardSmsAsync(Guid phoneId, object evt)
+    {
+        string? baseUrl;
+        try
+        {
+            baseUrl = await ResolveManagerUrlAsync(phoneId, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            _log.LogError("[HUB] sms phone={Phone} host lookup failed: {Msg}", phoneId, ex.Message);
+            return;
+        }
+        if (baseUrl == null) return;   // הסיבה כבר נרשמה ב-ResolveManagerUrlAsync
+
+        var url    = $"{baseUrl.TrimEnd('/')}/api/webhook/sms-event/{phoneId}";
+        var secret = _cfg["Orchestrator:ManagerWebhookSecret"] ?? "";
+        // אותו header שה-backend (phones.py → _agent_headers) שולח ל-Manager
+        var agentToken = _cfg["Orchestrator:AgentToken"] ?? "";
+
+        foreach (var delay in ForwardBackoffMs)
+        {
+            if (delay > 0) await Task.Delay(delay);
+            try
+            {
+                var http = _httpFactory.CreateClient();
+                http.Timeout = TimeSpan.FromSeconds(5);
+
+                using var req = new HttpRequestMessage(HttpMethod.Post, url) { Content = JsonContent.Create(evt) };
+                if (secret.Length > 0)     req.Headers.Add("X-Webhook-Secret", secret);
+                if (agentToken.Length > 0) req.Headers.Add("X-Agent-Token", agentToken);
+
+                using var r = await http.SendAsync(req);
+                if (r.IsSuccessStatusCode)
+                {
+                    _log.LogInformation("[HUB] sms → manager phone={Phone} {Status}", phoneId, (int)r.StatusCode);
+                    return;
+                }
+
+                // 4xx לא ישתפר בניסיון חוזר (secret / phone לא קיים)
+                if ((int)r.StatusCode is >= 400 and < 500)
+                {
+                    _log.LogWarning("[HUB] sms → manager phone={Phone} rejected {Status}: {Body}",
+                        phoneId, (int)r.StatusCode, await r.Content.ReadAsStringAsync());
+                    return;
+                }
+
+                _log.LogWarning("[HUB] sms → manager phone={Phone} {Status}, retrying", phoneId, (int)r.StatusCode);
+            }
+            catch (Exception ex)
+            {
+                _log.LogWarning("[HUB] sms → manager phone={Phone} failed: {Msg}", phoneId, ex.Message);
+            }
+        }
+
+        _log.LogError("[HUB] sms → manager phone={Phone} gave up after {N} attempts", phoneId, ForwardBackoffMs.Length);
+    }
+
+    /// <summary>
+    /// phones.host_id → agent_hosts.ip_address → http://ip:ManagerPort.
+    /// null (עם log) כשאין host, אין IP, או IP של loopback — אותו כלל כמו ב-provisioner.
+    /// </summary>
+    private async Task<string?> ResolveManagerUrlAsync(Guid phoneId, CancellationToken ct)
+    {
+        var phones = await _rpc.SelectAsync("phones", $"id=eq.{phoneId}&select=host_id", ct);
+        var hostId = phones.ValueKind == JsonValueKind.Array && phones.GetArrayLength() > 0
+            ? Str(phones[0], "host_id") : null;
+        if (string.IsNullOrWhiteSpace(hostId))
+        {
+            _log.LogWarning("[HUB] sms phone={Phone} has no host_id — not forwarded", phoneId);
+            return null;
+        }
+
+        var hosts = await _rpc.SelectAsync("agent_hosts",
+            $"id=eq.{hostId}&select=id,host_name,ip_address", ct);
+        var ip = hosts.ValueKind == JsonValueKind.Array && hosts.GetArrayLength() > 0
+            ? Str(hosts[0], "ip_address") : null;
+
+        if (!IsValidAgentIp(ip))
+        {
+            _log.LogError("[HUB] sms phone={Phone} host={Host} ip={Ip} invalid/loopback — refusing",
+                phoneId, hostId, ip ?? "(none)");
+            return null;
+        }
+
+        var port = int.TryParse(_cfg["Orchestrator:ManagerPort"], out var p) && p > 0 ? p : 5000;
+        return $"http://{ip}:{port}";
+    }
+
+    private static bool IsValidAgentIp(string? ip) =>
+        !string.IsNullOrWhiteSpace(ip)
+        && System.Net.IPAddress.TryParse(ip.Trim(), out var a)
+        && !System.Net.IPAddress.IsLoopback(a)
+        && !a.Equals(System.Net.IPAddress.Any)
+        && !a.Equals(System.Net.IPAddress.IPv6Any);
 
     public sealed record ClaimRequest(string[]? Serials, string? Update_From);
 

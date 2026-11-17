@@ -131,3 +131,10 @@ sed -i 's/^NOTIFY_EMAIL_ENABLED=.*/NOTIFY_EMAIL_ENABLED=false/' .env
 docker service logs --since 2m orchestrator_orchestrator 2>&1 | grep "\[MAIL\]"
 ```
 
+
+git force from vm 
+```bash
+sudo chown -R lior:lior /opt/phone-orchestrator
+git config --global --add safe.directory /opt/phone-orchestrator
+git fetch origin && git reset --hard origin/main
+```

@@ -42,7 +42,7 @@ public sealed class HeartbeatPayload
 }
 public static class BuildInfo
 {
-    public const string Version = "1.2.2";
+    public const string Version = "1.2.4";
     public static readonly string Marker =
         Environment.GetEnvironmentVariable("BUILD_MARKER") ?? "dev";
 }
