@@ -144,3 +144,27 @@ deploy mode=full
 cd /opt/phone-orchestrator && ./depoyfromhub.sh
 curl -s https://orch.grossman.bot/version
 ```
+
+test sms
+```bash
+docker logs phone-hub --since 1m 2>&1 | tail -5
+```
+
+
+michal:
+
+```bash
+docker service logs orchestrator_orchestrator --since 2m 2>&1 | grep -i sms
+```
+צריכות להופיע השורות [HUB] sms ... ו-[HUB] sms → manager phone=... 200.
+
+instance-20260416-115407:
+
+```bash
+journalctl -u whatsapp-manager --since "2 min ago" | grep SMS
+```
+worker-scenario:
+
+```bash
+docker service logs worker-972504477197-a456f63d --since 2m 2>&1 | grep SMS
+```
