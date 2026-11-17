@@ -1,0 +1,221 @@
+# Swarm stack for PhoneOrchestrator + the canary.
+#
+# Four services, one published port:
+#   orchestrator      dashboard, API, and the Spine-compatible sink
+#   whatsapp-canary   the prober's own WhatsApp container
+#   worker-canary     runs the handshake scenarios
+#   redis             leaves and events, discarded when a check passes
+#
+# The three canary services are reachable on the overlay network alone. The
+# prober's container in particular must never be exposed: /send/text on it
+# sends real WhatsApp messages.
+#
+# Singleton by design: replicas = 1. When the node holding it dies, Swarm
+# reschedules the task onto another node, which is the failover requirement.
+# Ports come from the routing mesh, so the dashboard stays reachable on the
+# same address wherever the task lands.
+#
+# Deploy with ./deploy.sh - it sources .env, builds a timestamped tag and
+# exports IMAGE. Do not run `docker stack deploy` directly: IMAGE would be
+# unset and the deploy fails on an invalid reference.
+#
+# No default on the image line, on purpose. A registry fallback would bake a
+# node address into the stack, and a :latest fallback would silently deploy a
+# stale image, because Swarm does not re-pull a tag it already resolved.
+
+version: "3.8"
+
+services:
+
+  # ────────────────────────────────────────────────────────── orchestrator
+  orchestrator:
+    image: ${IMAGE}
+    environment:
+      ASPNETCORE_URLS: http://+:8080
+      # Double underscore maps onto the "Orchestrator" config section.
+      Orchestrator__SupabaseUrl:         ${SUPABASE_URL}
+      # Comes from .env via deploy.sh, so it is visible in
+      # `docker service inspect`. If that matters, blank this line and create
+      # a swarm secret named supabase_key instead - Program.cs prefers the
+      # secret file whenever /run/secrets/supabase_key exists.
+      Orchestrator__SupabaseKey:         ${SUPABASE_KEY}
+      Orchestrator__AuthUser:            ${AUTH_USER:-admin}
+      # From .env. Empty disables auth - the app warns at startup if so.
+      Orchestrator__AuthPassword:        ${AUTH_PASSWORD}
+      Orchestrator__HostAgentPort:       "5000"
+      Orchestrator__StaleAfterSeconds:   "90"
+      Orchestrator__ScanIntervalSeconds: "30"
+      Orchestrator__FailuresBeforeDrain: "3"
+      # Observe-only window after start. Must outlast the slowest HostAgent boot.
+      Orchestrator__StartupGraceSeconds: "180"
+      # Empty means take the value from bot_config['orchestrator.env'].
+      Orchestrator__Env:                 ""
+      # Ships observing. Flip to "true" once the dashboard looks right.
+      Orchestrator__AutoDrain:           "false"
+      Orchestrator__Mode:                full
+
+      # ── canary ──────────────────────────────────────────────────────
+      Orchestrator__RedisUrl:            redis://redis:6379
+      # FastAPI on 8000 is the reachable wrapper. Baileys on 3001 binds to
+      # localhost inside the container and cannot be addressed from here.
+      Orchestrator__CanaryWaUrl:         http://whatsapp-canary:8000
+      Orchestrator__CanaryWorkerUrl:     http://worker-canary:9100
+      # Where the prober's container should post its events. Must resolve
+      # from inside whatsapp-canary, so it is a service name, not localhost.
+      Orchestrator__CanaryWebhookUrl:    http://orchestrator:8080/api/webhook/container-event
+      Orchestrator__CanaryEnabled:       "false"
+
+      # ── notification email ──────────────────────────────────────────
+      # notifications → Resend, per users.notify_email / notify_errors_only.
+      # The key can also be a swarm secret named resend_api_key.
+      Orchestrator__NotifyEmailEnabled:  ${NOTIFY_EMAIL_ENABLED:-false}
+      Orchestrator__ResendApiKey:        ${RESEND_API_KEY:-}
+      Orchestrator__NotifyFromEmail:     ${FROM_EMAIL:-noreply@mg.michal-solutions.com}
+      Orchestrator__NotifyAppName:       ${APP_NAME:-ScenarioBot}
+      Orchestrator__NotifySiteUrl:       ${SITE_URL:-https://grossman.bot}
+      Orchestrator__NotifyIntervalSeconds: "60"
+      Orchestrator__NotifyMaxAgeHours:   "24"
+
+      # ── phone-hub (docker על ה-NUC) ─────────────────────────────────
+      # Basic auth ל-/api/hub/* בלבד. HUB_PASSWORD ריק → /api/hub/* מחזיר 503.
+      # אפשר גם swarm secret בשם hub_password — Program.cs מעדיף אותו.
+      Orchestrator__HubUser:             ${HUB_USER:-hub}
+      Orchestrator__HubPassword:         ${HUB_PASSWORD:-}
+      # POST /api/devices/selftest — בדיקה עם נתוני fake. להחזיר ל-false אחרי.
+      Orchestrator__SelfTestEnabled:     ${SELFTEST_ENABLED:-false}
+
+      # ── SMS → WhatsAppManager (sms-event) ───────────────────────────
+      # Manager = agent_hosts.ip_address של הטלפון, אותו פורט כמו HostAgent.
+      # MANAGER_WEBHOOK_SECRET = AppSettings__WebhookSecret ב-Manager.
+      # AGENT_TOKEN ריק = לא נשלח X-Agent-Token (כמו ה-backend).
+      Orchestrator__ManagerPort:          "5000"
+      Orchestrator__ManagerWebhookSecret: ${MANAGER_WEBHOOK_SECRET:-}
+      Orchestrator__AgentToken:           ${AGENT_TOKEN:-}
+
+    ports:
+      - target: 8080
+        published: 8090
+        protocol: tcp
+        mode: ingress
+
+    networks:
+      - orchestrator_net
+
+    deploy:
+      replicas: 1
+      # Uncomment only with more than one manager - a single-manager
+      # constraint would defeat the failover this service exists for.
+      # placement:
+      #   constraints: [node.role == manager]
+      restart_policy:
+        condition: any
+        delay: 5s
+        max_attempts: 0
+      update_config:
+        order: stop-first
+        failure_action: rollback
+        delay: 10s
+      resources:
+        limits:
+          memory: 256M
+
+  # ─────────────────────────────────────────────────────── prober container
+  whatsapp-canary:
+    image: liorgr/whatsapp-single:latest
+
+    environment:
+      PHONE_ID:      ${CANARY_PHONE_ID}
+      AUTH_REVISION: "0"
+      REDIS_URL:     redis://redis:6379
+      LOG_LEVEL:     info
+      # The image defaults this to the product's WhatsAppDockerManager. Left
+      # there, the prober's container events would land in the product tables
+      # - exactly the contamination the canary exists to avoid.
+      MANAGER_URL:   http://orchestrator:8080
+
+    volumes:
+      # Baileys credentials. Without this the prober re-pairs on every
+      # redeploy and every check fails until someone scans a QR.
+      - canary_auth:/app/auth_info
+
+    networks:
+      - orchestrator_net
+
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: any
+        delay: 10s
+      resources:
+        limits:
+          memory: 512M
+
+  # ────────────────────────────────────────────────────────── prober worker
+  worker-canary:
+    image: liorgr/worker-scenario-runtime:latest
+
+    environment:
+      PHONE_ID:     ${CANARY_PHONE_ID}
+      SERVICE_NAME: worker-canary
+
+      # 9100 rather than the 9000 the product's workers use. Separate network
+      # namespaces cannot collide, so this is for legibility only - `ss -tlnp`
+      # on any node then says unambiguously which worker is which.
+      # PORT is what the worker reports in its heartbeat; ASPNETCORE_URLS is
+      # what it actually binds. Change one without the other and the service
+      # listens on a port nobody was told about.
+      PORT:            "9100"
+      ASPNETCORE_URLS: http://+:9100
+
+      # The whole isolation trick sits in these two lines. Telemetry goes to
+      # PhoneOrchestrator, which absorbs it into canary_* instead of Spine.
+      SPINE_URL:      http://orchestrator:8080
+      # WhatsAppSender reads WA_FASTAPI_URL, not SPINE_URL. Pointing it here
+      # too makes PhoneOrchestrator the relay to whatsapp-canary.
+      WA_FASTAPI_URL: http://orchestrator:8080
+
+      DENO_BIN:     /usr/local/bin/deno
+      DENO_TMPDIR:  /tmp/deno-scripts
+
+    networks:
+      - orchestrator_net
+
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+        delay: 10s
+      resources:
+        limits:
+          memory: 512M
+
+  # ─────────────────────────────────────────────────────────────────── redis
+  # Scratch space, not a database. Leaves and worker events land here per call
+  # and are copied into canary_events only when a check fails; passing checks
+  # are left to expire. No persistence: losing it costs one sweep.
+  redis:
+    image: redis:7-alpine
+    command: >
+      redis-server
+      --appendonly no
+      --save ""
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+
+    networks:
+      - orchestrator_net
+
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: any
+      resources:
+        limits:
+          memory: 320M
+
+volumes:
+  canary_auth:
+
+networks:
+  orchestrator_net:
+    driver: overlay

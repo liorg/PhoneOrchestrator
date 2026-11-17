@@ -138,3 +138,9 @@ sudo chown -R lior:lior /opt/phone-orchestrator
 git config --global --add safe.directory /opt/phone-orchestrator
 git fetch origin && git reset --hard origin/main
 ```
+
+deploy mode=full 
+```bash
+cd /opt/phone-orchestrator && ./depoyfromhub.sh
+curl -s https://orch.grossman.bot/version
+```
