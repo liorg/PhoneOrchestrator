@@ -42,12 +42,18 @@ services:
       Orchestrator__CanaryInboundToken: ${CANARY_INBOUND_TOKEN}
       Orchestrator__AuthPassword:       ${CANARY_RUNNER_PASSWORD}
       # ── OTP (2FA) — OtpSender. הכול אופציונלי; ברירות המחדל בקוד: ──
-      Otp__Enabled:   "false"            # false = לא שולח OTP (ה-canary ממשיך)
+      Otp__Enabled:     ${OTP_ENABLED:-false}
       # Otp__Template:  check_number      # תבנית מאושרת ב-WABA של ה-prober
       # Otp__Language:  en
       # Otp__Body:      "{name}|{code}"   # {{1}}=שם, {{2}}=קוד. זמינים: {code} {name} {mobile}
       # Otp__Header:    ""                # ריק = בלי משתנים ב-header
       # Otp__PollSec:   "2"
+      # ── מייל (mail_expect) — MailRelay: צרכן mail.in → Supabase → Manager mail-event ──
+      Mail__Enabled:              ${MAIL_RELAY_ENABLED:-false}
+      Mail__NatsUrl:              nats://nats-1:4222
+      Mail__ManagerWebhookSecret: ${MANAGER_WEBHOOK_SECRET:-manager-secret}
+      # Mail__ForwardMaxAgeSec: "600"   # מייל ישן מזה נשמר ולא מועבר
+      # Mail__RetentionDays:    "7"     # rpc_mail_purge פעם בשעה
     secrets:
       - source: canary_supabase_key
         target: supabase_key
