@@ -1,4 +1,4 @@
--- mail_all.sql — all the mail SQL (11+12+13+14) in one file. Idempotent: safe to run again.
+-- mail_all.sql — all the mail SQL (11+12+13+14+15) in one file. Idempotent: safe to run again.
 
 -- ════════════════════════ 11_mail_inbound.sql ════════════════════════
 -- ════════════════════════════════════════════════════════════════════════════
@@ -315,9 +315,9 @@ grant execute on function public.rpc_mail_thread(uuid, text, timestamptz, uuid, 
 -- When a phone's owner changes (rental ended → user_id = system, or a new rental), the
 -- old owner's mails must not stay on it. rpc_mail_release_stale() finds every mailbox whose
 -- user_id differs from the phone's current user_id, deletes that phone's mail_inbound rows
--- and the mailbox row. MailboxProvisioner calls it at the start of each sweep and then
--- re-provisions the phone for the new owner in the same sweep (same address, the Cloudflare
--- rule is reused, so nothing changes in Cloudflare).
+-- and moves the mailbox to the new owner (the mailbox row and the Cloudflare rule stay).
+-- Fallback only: trigger trg_mail_phone_owner (15) already does this at the moment of the change.
+-- MailboxProvisioner calls it at the start of each sweep.
 -- Safe with more than one caller: rows are claimed with FOR UPDATE SKIP LOCKED.
 
 create or replace function public.rpc_mail_release_stale()
@@ -340,7 +340,7 @@ begin
   loop
     delete from public.mail_inbound where phone_id = r.phone_id;
     get diagnostics n = row_count;
-    delete from public.mailboxes where id = r.id;
+    update public.mailboxes set user_id = r.new_user where id = r.id;
 
     out_a := out_a || jsonb_build_object(
       'address',  r.address,
@@ -356,3 +356,35 @@ $$;
 
 revoke all on function public.rpc_mail_release_stale() from public, anon, authenticated;
 grant execute on function public.rpc_mail_release_stale() to service_role;
+
+
+-- ════════════════════════ 15_mail_owner_trigger.sql ════════════════════════
+-- 15_mail_owner_trigger.sql
+-- The moment phones.user_id changes (rental ended → system, or a new rental), in the same
+-- transaction as the change:
+--   1. every mail_inbound row of that phone is deleted → the next renter starts empty
+--   2. the mailbox stays and is moved to the new owner → no window where mails don't map
+-- Works whoever changes the owner (rpc_rent_sweep, RentDevice.py, the backend, a manual update).
+-- rpc_mail_release_stale (14) stays as a fallback for anything that got past the trigger.
+
+create or replace function public._mail_on_phone_owner_change()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  delete from public.mail_inbound where phone_id = new.id;
+  update public.mailboxes set user_id = new.user_id where phone_id = new.id;
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_mail_phone_owner on public.phones;
+create trigger trg_mail_phone_owner
+  after update of user_id on public.phones
+  for each row
+  when (old.user_id is distinct from new.user_id)
+  execute function public._mail_on_phone_owner_change();
+
+revoke all on function public._mail_on_phone_owner_change() from public, anon, authenticated;
