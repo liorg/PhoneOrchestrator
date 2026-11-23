@@ -12,7 +12,8 @@ foreach (var (secretFile, configKey) in new[]
     ("/run/secrets/supabase_url",         "Orchestrator:SupabaseUrl"),
     ("/run/secrets/canary_inbound_token", "Orchestrator:CanaryInboundToken"),
     ("/run/secrets/resend_api_key",       "Orchestrator:ResendApiKey"),
-    ("/run/secrets/hub_password",         "Orchestrator:HubPassword")
+    ("/run/secrets/hub_password",         "Orchestrator:HubPassword"),
+    ("/run/secrets/cf_api_token",         "Mail:CfApiToken")
 })
 {
     if (File.Exists(secretFile))
@@ -70,6 +71,13 @@ if (canaryOnly)
 builder.Services.Configure<MailRelayOptions>(builder.Configuration.GetSection("Mail"));
 if (canaryOnly)
     builder.Services.AddHostedService<MailRelay>();
+
+// Inbox per phone: Cloudflare Email Routing rule + mailboxes row, every
+// Mail__ProvisionIntervalSec. Same instance as MailRelay - one runner, so a
+// rule is never created twice. Mail__ProvisionEnabled=false (default) turns it off.
+builder.Services.Configure<MailProvisionOptions>(builder.Configuration.GetSection("Mail"));
+if (canaryOnly)
+    builder.Services.AddHostedService<MailboxProvisioner>();
 
 builder.Services.AddControllers();
 

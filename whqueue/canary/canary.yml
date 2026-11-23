@@ -20,7 +20,7 @@
 #   canary_supabase_key  service-role key של ה-runner.
 #
 # שום דבר לא מפורסם החוצה. ה-dashboard ב-michal רק קורא/כותב את canary_control.
-# synv canary.yml ב-whqueue — סנכרון אוטומטי מ-PhoneOrchestrator. כל שינוי ב-canary.yml
+# canary.yml: מקור האמת ב-PhoneOrchestrator, מסונכרן אוטומטית ל-whqueue. שינוי — רק שם.
 
 version: "3.8"
 
@@ -54,9 +54,17 @@ services:
       Mail__ManagerWebhookSecret: ${MANAGER_WEBHOOK_SECRET:-manager-secret}
       # Mail__ForwardMaxAgeSec: "600"   # מייל ישן מזה נשמר ולא מועבר
       # Mail__RetentionDays:    "7"     # rpc_mail_purge פעם בשעה
+      # ── inbox לכל טלפון — MailboxProvisioner: rule ב-Cloudflare + שורה ב-mailboxes ──
+      Mail__ProvisionEnabled:     ${MAIL_PROVISION_ENABLED:-false}
+      Mail__CfZoneId:             ${MAIL_CF_ZONE_ID:-}
+      Mail__Domain:               ${MAIL_DOMAIN:-grossmanbot.download}
+      # Mail__CfApiToken — מ-/run/secrets/cf_api_token (Program.cs)
+      # Mail__ProvisionIntervalSec: "300"
     secrets:
       - source: canary_supabase_key
         target: supabase_key
+      - source: mail_cf_api_token
+        target: cf_api_token
     deploy:
       replicas: 1        # שניים = כל טלפון מקבל שני CHECK בכל סבב
       placement:
@@ -133,6 +141,11 @@ secrets:
   canary_supabase_key:
     external: true
     name: canary_supabase_key
+  # טוקן Cloudflare (Zone → Email Routing Rules → Edit) ל-MailboxProvisioner.
+  # חייב להתקיים לפני deploy:  printf '%s' '<token>' | docker secret create mail_cf_api_token -
+  mail_cf_api_token:
+    external: true
+    name: mail_cf_api_token
 
 networks:
   whqueue-net:
