@@ -19,10 +19,9 @@ namespace PhoneOrchestrator.Services;
 /// only makes the address visible in Cloudflare. Cloudflare allows 200 rules
 /// per zone; past Mail__CfMaxRules the row is still written, without a rule.
 ///
-/// Owner change (rental ended → user_id = system, or a new rental): every sweep first calls
-/// rpc_mail_release_stale (sql/14_mail_rent_release.sql), which deletes that phone's
-/// mail_inbound rows and its mailbox row; the same sweep then provisions it again for the
-/// new owner (same address, the Cloudflare rule is reused).
+/// Owner change (rental ended → user_id = system, or a new rental): trigger trg_mail_phone_owner
+/// (sql/15) deletes that phone's mail_inbound rows and moves the mailbox to the new owner.
+/// As a fallback, every sweep first calls rpc_mail_release_stale (sql/14), which does the same.
 ///
 /// botinbound only (Mode=canary), next to MailRelay: one instance, so two
 /// sweeps can never create the same rule twice. Skips the canary prober number.
@@ -170,7 +169,7 @@ public sealed class MailboxProvisioner : BackgroundService
         return new(todo.Count, created, reused, noRule, failed, rules.Count, released);
     }
 
-    /// <summary>Owner changed (rental ended / new rental) → old owner's mails + mailbox deleted.</summary>
+    /// <summary>Fallback: owner changed → old owner's mails deleted, mailbox moved to the new owner.</summary>
     private async Task<int> ReleaseStaleAsync(HttpClient http, CancellationToken ct)
     {
         using var req = Supa(HttpMethod.Post, "rpc/rpc_mail_release_stale");
