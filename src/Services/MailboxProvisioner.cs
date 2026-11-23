@@ -19,6 +19,11 @@ namespace PhoneOrchestrator.Services;
 /// only makes the address visible in Cloudflare. Cloudflare allows 200 rules
 /// per zone; past Mail__CfMaxRules the row is still written, without a rule.
 ///
+/// Owner change (rental ended → user_id = system, or a new rental): every sweep first calls
+/// rpc_mail_release_stale (sql/14_mail_rent_release.sql), which deletes that phone's
+/// mail_inbound rows and its mailbox row; the same sweep then provisions it again for the
+/// new owner (same address, the Cloudflare rule is reused).
+///
 /// botinbound only (Mode=canary), next to MailRelay: one instance, so two
 /// sweeps can never create the same rule twice. Skips the canary prober number.
 ///   Mail__ProvisionEnabled=false   Mail__ProvisionIntervalSec=300
@@ -80,9 +85,9 @@ public sealed class MailboxProvisioner : BackgroundService
                     _failing = false;
                     _log.LogInformation("[MAILBOX] sweep recovered");
                 }
-                if (r.Created + r.Reused + r.Failed > 0)
-                    _log.LogInformation("[MAILBOX] sweep | created={C} reused={R} no_rule={N} failed={F} rules={T}",
-                        r.Created, r.Reused, r.NoRule, r.Failed, r.RulesTotal);
+                if (r.Created + r.Reused + r.Failed + r.Released > 0)
+                    _log.LogInformation("[MAILBOX] sweep | released={X} created={C} reused={R} no_rule={N} failed={F} rules={T}",
+                        r.Released, r.Created, r.Reused, r.NoRule, r.Failed, r.RulesTotal);
             }
             catch (Exception ex) when (!ct.IsCancellationRequested)
             {
@@ -96,11 +101,13 @@ public sealed class MailboxProvisioner : BackgroundService
         }
     }
 
-    public sealed record SweepResult(int Candidates, int Created, int Reused, int NoRule, int Failed, int RulesTotal);
+    public sealed record SweepResult(int Candidates, int Created, int Reused, int NoRule, int Failed, int RulesTotal, int Released = 0);
 
     /// <summary>One sweep. Public for tests.</summary>
     public async Task<SweepResult> SweepAsync(HttpClient http, CancellationToken ct)
     {
+        var released = await ReleaseStaleAsync(http, ct);
+
         var phones = await SupaGetAsync(http, "phones?select=id,number,user_id&number=not.is.null", ct);
         var boxes  = await SupaGetAsync(http, "mailboxes?select=phone_id&is_active=eq.true", ct);
         var have   = boxes.Select(b => Str(b, "phone_id")).Where(s => s != null).ToHashSet();
@@ -110,7 +117,7 @@ public sealed class MailboxProvisioner : BackgroundService
             .Where(p => !have.Contains(Str(p, "id")))
             .Where(p => string.IsNullOrEmpty(skip) || Digits(Str(p, "number")) != skip)
             .ToList();
-        if (todo.Count == 0) return new(0, 0, 0, 0, 0, -1);
+        if (todo.Count == 0) return new(0, 0, 0, 0, 0, -1, released);
 
         var rules = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var r in await CfRulesAsync(http, ct))
@@ -160,7 +167,25 @@ public sealed class MailboxProvisioner : BackgroundService
                 _log.LogError("[MAILBOX] {Addr} phone={Phone} failed: {Err}", addr, phoneId, ex.Message);
             }
         }
-        return new(todo.Count, created, reused, noRule, failed, rules.Count);
+        return new(todo.Count, created, reused, noRule, failed, rules.Count, released);
+    }
+
+    /// <summary>Owner changed (rental ended / new rental) → old owner's mails + mailbox deleted.</summary>
+    private async Task<int> ReleaseStaleAsync(HttpClient http, CancellationToken ct)
+    {
+        using var req = Supa(HttpMethod.Post, "rpc/rpc_mail_release_stale");
+        req.Content = JsonContent.Create(new { });
+        using var res = await http.SendAsync(req, ct);
+        var raw = await res.Content.ReadAsStringAsync(ct);
+        if (!res.IsSuccessStatusCode)
+            throw new HttpRequestException($"rpc_mail_release_stale -> {(int)res.StatusCode}: {Trim(raw)}");
+
+        var arr = (JsonNode.Parse(raw) as JsonObject)?["released"] as JsonArray;
+        if (arr == null) return 0;
+        foreach (var r in arr.OfType<JsonObject>())
+            _log.LogInformation("[MAILBOX] released {Addr} phone={Phone} old_user={Old} new_user={New} mails_deleted={N}",
+                Str(r, "address"), Str(r, "phone_id"), Str(r, "old_user"), Str(r, "new_user"), r["mails"]?.ToString());
+        return arr.Count;
     }
 
     // ═══════════════════════════════════════════════════════ address ══
