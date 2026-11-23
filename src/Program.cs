@@ -63,6 +63,14 @@ builder.Services.AddHostedService<CanaryLoop>();
 if (canaryOnly)
     builder.Services.AddHostedService<OtpSender>();
 
+// ── mail (mail_expect) ───────────────────────────────────────────────
+// NATS mail.in (whqueue publishes) → rpc_mail_inbound → Manager mail-event.
+// botinbound only: nats-1 is reachable only on whqueue-net. Mail__Enabled=false
+// (the default) turns it off.
+builder.Services.Configure<MailRelayOptions>(builder.Configuration.GetSection("Mail"));
+if (canaryOnly)
+    builder.Services.AddHostedService<MailRelay>();
+
 builder.Services.AddControllers();
 
 var app = builder.Build();
