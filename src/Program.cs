@@ -55,6 +55,10 @@ if (!canaryOnly)
 // ── canary ───────────────────────────────────────────────────────────
 // v2: Cloud API prober + CHECK template + ACK. No Redis, no Worker.
 builder.Services.AddSingleton<CanaryStore>();
+// WhatsApp log of the canary phone (canary-wa.html). Singleton + its own drain loop:
+// /canary/inbound and the prober's sends enqueue, never wait.
+builder.Services.AddSingleton<CanaryWaLog>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<CanaryWaLog>());
 builder.Services.AddHttpClient<CanaryProber>();
 builder.Services.AddHostedService<CanaryLoop>();
 

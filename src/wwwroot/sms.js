@@ -177,10 +177,10 @@ async function openOne(id) {
         <span class="host__ip">${cell(m.device_id)} · slot ${m.slot ?? '?'}</span>
       </div>
       <div class="host__stats">
-        <span>שולח <b>${cell(m.target_phone)}</b></span>
-        <span>לקוח <b>${cell(m.owner)}</b></span>
-        <span>phone_id <b>${cell(m.phone_id)}</b></span>
-        <span>ניסיונות <b>${cell(m.forward_attempts)}</b></span>
+        <span>שולח <b><bdi>${cell(m.target_phone)}</bdi></b></span>
+        <span>לקוח <b><bdi>${cell(m.owner)}</bdi></b></span>
+        <span>phone_id <b><bdi>${cell(m.phone_id)}</bdi></b></span>
+        <span>ניסיונות <b><bdi>${cell(m.forward_attempts)}</bdi></b></span>
       </div>
       <p class="sms-full"><bdi dir="auto">${cell(m.body)}</bdi></p>
       ${m.forward_error ? `<p class="host__err">${esc(m.forward_error)}</p>` : ''}`;

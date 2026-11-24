@@ -513,3 +513,11 @@ html, body {
 .live { cursor: pointer; }
 a.chip { text-decoration: none; display: inline-block; }
 
+/* ════════════════════════════════════════════════════════════════════════
+   WhatsApp canary page (canary-wa.html).
+   ════════════════════════════════════════════════════════════════════════ */
+
+.hostbar .gates { flex-wrap: wrap; }
+.hostbar .gate { max-width: none; padding: 0 8px; }
+pre.raw { margin: 0; max-height: none; }
+

@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PhoneOrchestrator · WhatsApp canary</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="bar">
+  <div class="bar__id">
+    <span class="dot" id="pulse" aria-hidden="true"></span>
+    <svg class="mark" viewBox="0 0 58 18" aria-hidden="true">
+      <path d="M1 16.5 L8 2 L15 16.5 Z" fill="#A146FF" stroke="#A146FF" stroke-width="1.5" stroke-linejoin="round"/>
+      <circle cx="29" cy="9.5" r="7.5" fill="#2391FF"/>
+      <rect x="41" y="2" width="15.5" height="15" rx="3" fill="#0FF0FF"/>
+    </svg>
+    <h1>Phone<em>Orchestrator</em></h1>
+  </div>
+
+  <nav class="nav">
+    <a href="/">שרתים</a>
+    <a href="/devices.html">מכשירים</a>
+    <a href="/sms.html">SMS</a>
+    <a href="/canary.html">בדיקות</a>
+    <a href="/canary-wa.html" aria-current="page">WA canary</a>
+  </nav>
+
+  <dl class="bar__meta">
+    <div><dt>רענון</dt><dd id="m-refresh">—</dd></div>
+  </dl>
+  <button class="bar__out" id="logout">יציאה</button>
+</header>
+
+<p class="banner" id="banner" hidden></p>
+
+<!-- ------------------------------------------------------------ list view -->
+<main class="view" id="view-list">
+  <div class="hostbar" id="prober"><p class="empty">טוען מצב ה-prober…</p></div>
+
+  <div class="view__head">
+    <h2>הודעות WhatsApp של טלפון ה-canary</h2>
+    <div class="pager" id="waPager"></div>
+  </div>
+
+  <div class="filters">
+    <label>חיפוש <input type="search" id="q" placeholder="טקסט / מספר / קוד / wamid"></label>
+    <button class="back" id="apply">הצג</button>
+    <label class="live"><input type="checkbox" id="live" checked> חי (5 שנ')</label>
+  </div>
+
+  <div class="filters" id="dirChips">
+    <button class="chip" data-dir="" aria-current="true">הכל</button>
+    <button class="chip" data-dir="in">נכנס</button>
+    <button class="chip" data-dir="out">יוצא</button>
+    <button class="chip" data-dir="status">סטטוס מסירה</button>
+    <button class="chip" data-dir="system">מערכת</button>
+  </div>
+
+  <div id="list"><p class="empty">טוען…</p></div>
+</main>
+
+<!-- ---------------------------------------------------------- detail view -->
+<main class="view" id="view-one" hidden>
+  <div class="view__head">
+    <button class="back" id="back">חזרה לרשימה</button>
+    <span class="hint" id="oneId"></span>
+  </div>
+  <div class="hostbar" id="onebar"></div>
+  <pre class="trail__detail raw" id="raw"></pre>
+</main>
+
+<script src="canary-wa.js"></script>
+</body>
+</html>

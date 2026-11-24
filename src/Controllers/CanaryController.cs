@@ -20,17 +20,43 @@ public sealed class CanaryController : ControllerBase
 {
     private readonly SupabaseRpc _rpc;
     private readonly CanaryStore _store;
+    private readonly CanaryWaLog _waLog;
     private readonly OrchestratorOptions _opt;
     private readonly ILogger<CanaryController> _log;
 
     public CanaryController(
-        SupabaseRpc rpc, CanaryStore store,
+        SupabaseRpc rpc, CanaryStore store, CanaryWaLog waLog,
         IOptions<OrchestratorOptions> opt, ILogger<CanaryController> log)
     {
         _rpc   = rpc;
         _store = store;
+        _waLog = waLog;
         _opt   = opt.Value;
         _log   = log;
+    }
+
+    // ═══════════════════════════════════════════ WhatsApp of the canary ══
+    // canary_wa_events (CanaryWaLog on the runner). canary-wa.html.
+
+    /// <summary>Newest first. dir: in | out | status | system.</summary>
+    [HttpGet("api/canary/wa")]
+    public async Task<IActionResult> WaEvents(
+        [FromQuery] int page = 1, [FromQuery] int? pageSize = null,
+        [FromQuery] string? dir = null, [FromQuery] string? q = null, CancellationToken ct = default)
+    {
+        var el = SupabaseRpc.Unwrap(await _rpc.CallAsync("rpc_canary_wa_list", new
+        {
+            p_page = page, p_page_size = pageSize, p_dir = dir, p_search = q
+        }, ct));
+        return Content(el.GetRawText(), "application/json");
+    }
+
+    [HttpGet("api/canary/wa/{id:long}")]
+    public async Task<IActionResult> WaEvent(long id, CancellationToken ct = default)
+    {
+        var el = SupabaseRpc.Unwrap(await _rpc.CallAsync("rpc_canary_wa_event", new { p_id = id }, ct));
+        if (el.ValueKind != JsonValueKind.Object) return NotFound(new { ok = false, reason = "not_found" });
+        return Content(el.GetRawText(), "application/json");
     }
 
     // ══════════════════════════════════════════════════════ report ══════
@@ -146,12 +172,14 @@ public sealed class CanaryController : ControllerBase
         try
         {
             var r = await _store.HandleInboundAsync(body, ct);
+            _waLog.Inbound(body, r.Verdict ?? (r.Matched ? "matched" : null), r.Note);
             return Ok(new { received = true, matched = r.Matched, r.Verdict, r.Note });
         }
         catch (Exception ex)
         {
             // DB hiccup: let the container retry this one.
             _log.LogError(ex, "[CANARY] Inbound handling failed");
+            _waLog.Inbound(body, "error", ex.Message);
             return StatusCode(503, new { received = false });
         }
     }

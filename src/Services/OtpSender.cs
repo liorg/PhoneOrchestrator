@@ -140,7 +140,7 @@ public sealed class OtpSender : BackgroundService
         };
 
         var (ok, wamid, error) = await prober.SendTemplateAsync(
-            r.Mobile, tpl.Name, tpl.Language, Render(tpl.Body, v), Render(tpl.Header, v), ct);
+            r.Mobile, tpl.Name, tpl.Language, Render(tpl.Body, v), Render(tpl.Header, v), ct, sensitive: true);
 
         await MarkAsync(db, r.Id, wamid, ok ? null : error ?? "unknown error", ct);
 

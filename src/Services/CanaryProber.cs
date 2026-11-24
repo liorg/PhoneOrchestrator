@@ -17,12 +17,15 @@ public sealed class CanaryProber
     private readonly HttpClient _http;
     private readonly OrchestratorOptions _opt;
     private readonly ILogger<CanaryProber> _log;
+    private readonly CanaryWaLog _waLog;
 
-    public CanaryProber(HttpClient http, IOptions<OrchestratorOptions> opt, ILogger<CanaryProber> log)
+    public CanaryProber(HttpClient http, IOptions<OrchestratorOptions> opt, ILogger<CanaryProber> log,
+                        CanaryWaLog waLog)
     {
-        _opt  = opt.Value;
-        _log  = log;
-        _http = http;
+        _opt   = opt.Value;
+        _log   = log;
+        _waLog = waLog;
+        _http  = http;
         _http.Timeout = TimeSpan.FromSeconds(30);
     }
 
@@ -98,8 +101,18 @@ public sealed class CanaryProber
     /// <summary>
     /// Any approved template. params is {"body": [...]} or {"header": [...], "body": [...]}
     /// - a dict, not a list. Used by the canary (check_id) and by OTP (check_number).
+    /// sensitive: params are not written to canary_wa_events (OTP).
     /// </summary>
     public async Task<(bool ok, string? waMessageId, string? error)> SendTemplateAsync(
+        string number, string template, string language,
+        string[] body, string[]? header, CancellationToken ct, bool sensitive = false)
+    {
+        var r = await SendTemplateCoreAsync(number, template, language, body, header, ct);
+        _waLog.Outbound(number, template, language, sensitive ? null : body, r.ok, r.waMessageId, r.error);
+        return r;
+    }
+
+    private async Task<(bool ok, string? waMessageId, string? error)> SendTemplateCoreAsync(
         string number, string template, string language,
         string[] body, string[]? header, CancellationToken ct)
     {
