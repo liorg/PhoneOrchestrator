@@ -18,6 +18,18 @@ if (( ${#missing[@]} )); then
   exit 1
 fi
 
+# ── SMS: SmsRelay → Manager sms-event. בלי הסוד ה-Manager דוחה כל SMS (ack = נמחק מהתור).
+# SMS_MANAGER_WEBHOOK_SECRET = MANAGER_WEBHOOK_SECRET ב-michal; נפרד מזה של Mail.
+if [[ "${SMS_RELAY_ENABLED:-false}" == "true" && -z "${SMS_MANAGER_WEBHOOK_SECRET:-}" ]]; then
+  echo "!! SMS_RELAY_ENABLED=true but SMS_MANAGER_WEBHOOK_SECRET is empty in canary.env" >&2
+  exit 1
+fi
+if [[ "${SMS_RELAY_ENABLED:-false}" == "true" ]] && ! grep -q 'Sms__Enabled' canary.yml; then
+  echo "!! SMS_RELAY_ENABLED=true but canary.yml has no Sms__ block (git pull?)" >&2
+  exit 1
+fi
+echo "==> mail relay=${MAIL_RELAY_ENABLED:-false} · sms relay=${SMS_RELAY_ENABLED:-false} · otp=${OTP_ENABLED:-false}"
+
 # ── secrets ────────────────────────────────────────────────────────────────
 # טוקן מטא: נוצר רק ב-set-canary-token.sh.
 if [[ -z "${CANARY_WA_SECRET:-}" ]] || ! docker secret inspect "$CANARY_WA_SECRET" >/dev/null 2>&1; then

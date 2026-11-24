@@ -179,6 +179,7 @@ function renderDevicebar() {
       <span class="hostbar__name">${esc(d.device_id)}</span>
       ${usbTag(d)}
       <span class="host__ip">${cell(d.update_from)}</span>
+      <a class="chip" href="/sms.html?device=${encodeURIComponent(d.device_id)}">SMS של המכשיר</a>
     </div>
     <div class="host__stats">
       <span>דגם <b>${cell(d.model)}</b></span>
@@ -214,6 +215,7 @@ function simRow(s) {
     <td>${ownerCell(s)}</td>
     <td>${pullTag(s.pull)}</td>
     <td><div class="row row--actions">
+      <a class="chip" href="/sms.html?sim=${esc(s.id)}">SMS</a>
       <button class="chip" data-act="reverify" data-sim="${esc(s.id)}" ${canVerify ? '' : 'disabled'}>אימות מחדש</button>
       <button class="chip chip--bad" data-act="release" data-sim="${esc(s.id)}"
               data-who="${esc(s.owner?.email || '')}" data-number="${esc(s.phone_number || '')}"

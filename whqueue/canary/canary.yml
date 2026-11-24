@@ -10,6 +10,7 @@
 #   canary-runner  liorgr/phone-orchestrator ב-Mode=canary. קורא את canary_control
 #                  מה-DB כל 30 שניות (enabled, interval, שעות, run_now) ומריץ סבבים.
 #                  בנוסף: OtpSender — שולח קודי OTP של 2FA מ-otp_requests דרך ה-prober.
+#                  MailRelay / SmsRelay — צרכני mail.in / sms.in → Supabase → Manager.
 #   canary-prober  whatsapp-cloudapi — טלפון ה-canary. נרשם ב-whqueue, צורך את
 #                  ה-subject שלו מ-nats-1, שולח את התבנית ומעביר ACK ל-runner.
 #                  משמש גם לשליחת OTP (תבנית check_number).
@@ -60,6 +61,15 @@ services:
       Mail__Domain:               ${MAIL_DOMAIN:-grossmanbot.download}
       # Mail__CfApiToken — מ-/run/secrets/cf_api_token (Program.cs)
       # Mail__ProvisionIntervalSec: "300"
+      # ── SMS — SmsRelay: צרכן sms.in (whqueue /sms) → rpc_sms_inbound → Manager sms-event ──
+      Sms__Enabled:               ${SMS_RELAY_ENABLED:-false}
+      Sms__NatsUrl:               nats://nats-1:4222
+      # = MANAGER_WEBHOOK_SECRET ב-michal (מה ש-HubController שולח ל-sms-event היום).
+      # נפרד מ-Mail__ManagerWebhookSecret — שינוי כאן לא נוגע במייל.
+      Sms__ManagerWebhookSecret:  ${SMS_MANAGER_WEBHOOK_SECRET:-}
+      Sms__AgentToken:            ${AGENT_TOKEN:-}                            # X-Agent-Token, כמו HubController
+      # Sms__ForwardMaxAgeSec:    "600"   # SMS ישן מזה נשמר ולא מועבר
+      # Sms__MaxDeliver:          "10"
     secrets:
       - source: canary_supabase_key
         target: supabase_key

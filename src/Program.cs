@@ -79,6 +79,15 @@ builder.Services.Configure<MailProvisionOptions>(builder.Configuration.GetSectio
 if (canaryOnly)
     builder.Services.AddHostedService<MailboxProvisioner>();
 
+// ── SMS (phone-hub) ──────────────────────────────────────────────────
+// phone-hub → whqueue /sms → NATS sms.in → rpc_sms_inbound → Manager sms-event.
+// Replaces POST /api/hub/sms (HubController, still live for the legacy path).
+// botinbound only: nats-1 is reachable only on whqueue-net. Sms__Enabled=false
+// (the default) turns it off.
+builder.Services.Configure<SmsRelayOptions>(builder.Configuration.GetSection("Sms"));
+if (canaryOnly)
+    builder.Services.AddHostedService<SmsRelay>();
+
 builder.Services.AddControllers();
 
 var app = builder.Build();

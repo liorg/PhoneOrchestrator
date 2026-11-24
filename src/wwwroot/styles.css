@@ -485,3 +485,31 @@ html, body {
 
 /* הכפתור ההרסני רחוק מהבטוח */
 .row--actions { gap: 28px; }
+
+/* ════════════════════════════════════════════════════════════════════════
+   SMS page (sms.html).
+   ════════════════════════════════════════════════════════════════════════ */
+
+/* SMS text is mostly Hebrew - not mono, not forced LTR like the other cells. */
+.tbl td.sms-body {
+  font-family: var(--sans); font-size: 13px; direction: rtl;
+  max-width: 420px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.sms-full {
+  margin: 0; font-family: var(--sans); font-size: 15px; line-height: 1.6;
+  white-space: pre-wrap; word-break: break-word;
+}
+
+/* A row that arrived since the last refresh. */
+.tbl tr.fresh td { animation: fresh 3s ease-out; }
+@keyframes fresh { from { background: rgba(79,193,166,.22); } to { background: transparent; } }
+
+.filters input[type="search"] {
+  background: var(--panel); border: 1px solid var(--rule); border-radius: 2px;
+  color: var(--paper); font-family: var(--mono); font-size: 12px;
+  padding: 5px 8px; min-width: 180px;
+}
+.filters input[type="search"]:focus { outline: none; border-color: var(--ok); }
+.live { cursor: pointer; }
+a.chip { text-decoration: none; display: inline-block; }
+
