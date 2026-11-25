@@ -35,7 +35,7 @@ function render(withNew = false) {
   $('plans').innerHTML = `
     <div class="wrap"><table class="tbl">
       <thead><tr>
-        <th>id</th><th>מחיר / חודש</th><th>טלפונים</th><th>בוטים</th><th>תזמונים</th>
+        <th>id</th><th>מחיר / חודש</th><th>טלפונים</th><th>בוטים לטלפון</th><th>תזמונים</th>
         <th>API</th><th>הרצות מקביליות</th><th>ניטור</th><th>כפתור</th><th>מומלץ</th>
         <th>סדר</th><th>פעיל</th><th>לקוחות</th><th></th>
       </tr></thead>

@@ -38,7 +38,7 @@ async function loadList() {
     $('list').innerHTML = d.items.length ? `
       <div class="wrap"><table class="tbl">
         <thead><tr>
-          <th>אימייל</th><th>שם</th><th>תוכנית</th><th>טלפונים</th><th>בוטים</th>
+          <th>אימייל</th><th>שם</th><th>תוכנית</th><th>טלפונים</th><th>בוטים (טלפון מלא)</th>
           <th>תזמונים</th><th>חוב</th><th>תשלום אחרון</th><th>הצטרף</th>
         </tr></thead>
         <tbody>${d.items.map(custRow).join('')}</tbody>
@@ -147,9 +147,9 @@ async function openDetail(userId) {
             <button class="back" id="dPlanSave">שנה תוכנית</button>
           </div>
           <p class="help">השינוי מיידי. החודש הנוכחי מחויב לפי התוכנית היקרה ביותר שהייתה פעילה בו.</p>
-          <div>טלפונים ${usage(use.phones, lim.phones)} · בוטים ${usage(use.bots, lim.bots)}
+          <div>טלפונים ${usage(use.phones, lim.phones)} · בוטים לטלפון ${usage(use.bots, lim.bots)}
             · תזמונים ${usage(use.schedules, lim.schedules)}</div>
-          ${cd.cooling ? `<div class="hint">${cd.cooling} מקומות בוטים בהמתנה עד ${when(cd.next_free_at)}</div>` : ''}
+          ${cd.cooling ? `<div class="hint">${cd.cooling} מקומות בוטים בהמתנה (בכל הטלפונים) עד ${when(cd.next_free_at)}</div>` : ''}
         </div>
 
         <div class="box">
