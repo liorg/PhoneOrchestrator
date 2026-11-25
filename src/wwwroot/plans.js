@@ -85,7 +85,7 @@ async function save(tr) {
 
 async function load() {
   try {
-    plans = await get('/api/admin/plans');
+    plans = itemsOf(await get('/api/admin/plans'));
     render();
     clearFail();
   } catch (e) {

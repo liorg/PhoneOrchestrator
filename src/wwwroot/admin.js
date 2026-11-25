@@ -91,6 +91,9 @@ function historyPanel(kind, elId, pagerId) {
   return load;
 }
 
+// list endpoints answer { items: [...] }; a bare array is accepted too
+const itemsOf = (d) => (Array.isArray(d) ? d : (d && Array.isArray(d.items) ? d.items : []));
+
 // "" → null (unlimited / custom), else a number
 const numOrNull = (v) => (String(v).trim() === '' ? null : Number(v));
 

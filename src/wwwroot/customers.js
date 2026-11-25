@@ -222,7 +222,7 @@ $('accrue').onclick = async () => {
 
 (async () => {
   try {
-    state.plans = await get('/api/admin/plans');
+    state.plans = itemsOf(await get('/api/admin/plans'));
     $('plan').innerHTML += state.plans.map((p) => `<option value="${esc(p.id)}">${esc(p.id)}</option>`).join('');
   } catch (e) { /* the list still loads */ }
   loadList();

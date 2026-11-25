@@ -39,7 +39,7 @@ function renderOptions(withNew = false) {
 }
 
 async function loadOptions() {
-  try { options = await get('/api/admin/rent/options'); renderOptions(); clearFail(); }
+  try { options = itemsOf(await get('/api/admin/rent/options')); renderOptions(); clearFail(); }
   catch (e) { if (e.message !== 'unauthenticated') fail('טעינת אפשרויות ההשכרה נכשלה: ' + e.message); }
 }
 
