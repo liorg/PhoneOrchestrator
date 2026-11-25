@@ -79,7 +79,7 @@ on conflict (key) do nothing;
 update bot_config c set description = d.txt, updated_at = now()
   from (values
     ('plans.default_plan',          'Plan id a user gets before choosing one (free / basic / advanced). A paid plan here means every new user starts owing its monthly price.'),
-    ('plans.bot_cooldown_hours',    'Hours a removed bot (agent) keeps its slot blocked. Stops a customer from rotating bots to message many numbers. 0 = no cooldown.'),
+    ('plans.bot_cooldown_hours',    'Hours a removed bot (agent) keeps its slot blocked on that phone (own or rented). Stops a customer from rotating bots to message many numbers. 0 = no cooldown.'),
     ('admin.page_size',             'Rows per page in the PhoneOrchestrator back office (plans, customers, config). 5–200.'),
     ('rent.warn_percent',           'Percent of the rental time after which the customer gets the "rental ending" notification and the battery icon turns red.'),
     ('schedules_page_size',         'Rows per page in the app''s schedules grid.'),
@@ -87,6 +87,10 @@ update bot_config c set description = d.txt, updated_at = now()
     ('mail.paging',                 'Senders per page on the phone''s Mail tab (1–100).')
   ) as d(k, txt)
  where c.key = d.k and coalesce(c.description, '') = '';
+
+-- the cooldown key's meaning changed (now per phone) — refresh it even when already written
+update bot_config set description = 'Hours a removed bot (agent) keeps its slot blocked on that phone (own or rented). Stops a customer from rotating bots to message many numbers. 0 = no cooldown.'
+ where key = 'plans.bot_cooldown_hours';
 
 create or replace function _admin_page_size() returns int
 language sql stable as $$
@@ -179,8 +183,9 @@ begin
     from (
       select c.*,
              (select count(*) from phones ph where ph.user_id = c.user_id and ph.sim_id is null)  as phones,
-             (select count(*) from contacts ct join phones ph on ph.id = ct.phone_id
-               where ph.user_id = c.user_id and ct.tag = 'active')                                as bots,
+             (select coalesce(max(n), 0) from (                                                -- fullest phone
+                select count(*) n from contacts ct join phones ph on ph.id = ct.phone_id
+                 where ph.user_id = c.user_id and ct.tag = 'active' group by ct.phone_id) x)      as bots,
              (select count(*) from schedules s join phones ph on ph.id = s.phone_id
                where ph.user_id = c.user_id and s.status is distinct from 'completed')            as schedules
         from _c c
