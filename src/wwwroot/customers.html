@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>לקוחות · PhoneOrchestrator</title>
+<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="admin.css">
+</head>
+<body>
+
+<header class="bar">
+  <div class="bar__id">
+    <span class="dot" id="pulse" aria-hidden="true"></span>
+    <svg class="mark" viewBox="0 0 58 18" aria-hidden="true">
+      <path d="M1 16.5 L8 2 L15 16.5 Z" fill="#A146FF" stroke="#A146FF" stroke-width="1.5" stroke-linejoin="round"/>
+      <circle cx="29" cy="9.5" r="7.5" fill="#2391FF"/>
+      <rect x="41" y="2" width="15.5" height="15" rx="3" fill="#0FF0FF"/>
+    </svg>
+    <h1>Phone<em>Orchestrator</em></h1>
+  </div>
+  <nav class="nav">
+    <a href="/">שרתים</a>
+    <a href="/devices.html">מכשירים</a>
+    <a href="/sms.html">SMS</a>
+    <a href="/canary.html">בדיקות</a>
+    <a href="/canary-wa.html">WA canary</a>
+    <a href="/plans.html">תוכניות</a>
+    <a href="/rentals.html">השכרות</a>
+    <a href="/customers.html" aria-current="page">לקוחות</a>
+    <a href="/config.html">הגדרות</a>
+  </nav>
+  <button class="bar__out" id="logout">יציאה</button>
+</header>
+
+<p class="banner" id="banner" hidden></p>
+
+<!-- ------------------------------------------------------------ list view -->
+<main class="view" id="view-list">
+  <div class="view__head">
+    <h2>לקוחות וחובות</h2>
+    <div class="pager" id="pager"></div>
+  </div>
+
+  <div class="filters">
+    <input type="search" id="q" placeholder="חיפוש אימייל או שם">
+    <select id="plan"><option value="">כל התוכניות</option></select>
+    <label><input type="checkbox" id="debt"> בחוב בלבד</label>
+    <button class="back" id="accrue">חשב חיובים לכולם</button>
+    <span class="hint" id="summary"></span>
+  </div>
+
+  <div id="list"><p class="empty">טוען…</p></div>
+</main>
+
+<!-- ---------------------------------------------------------- detail view -->
+<main class="view" id="view-detail" hidden>
+  <div class="view__head">
+    <button class="back" id="backList">חזרה ללקוחות</button>
+  </div>
+  <div id="detail"><p class="empty">טוען…</p></div>
+</main>
+
+<script src="admin.js"></script>
+<script src="customers.js"></script>
+</body>
+</html>

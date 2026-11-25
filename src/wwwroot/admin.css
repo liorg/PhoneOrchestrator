@@ -1,0 +1,20 @@
+/* Back office additions on top of styles.css — inputs inside tables, a success banner, a detail grid. */
+.tbl input[type=text], .tbl input[type=number], .tbl select, .tbl textarea {
+  width: 100%; min-width: 64px; box-sizing: border-box; padding: 5px 7px; border-radius: 6px;
+  border: 1px solid rgba(127,127,127,.35); background: transparent; color: inherit; font: inherit; font-size: 13px;
+}
+.tbl input.n { width: 80px; min-width: 0; text-align: center; }
+.tbl textarea { min-height: 54px; resize: vertical; font-size: 12px; line-height: 1.45; }
+.tbl td.k code { white-space: nowrap; }
+.tbl tr.dirty td { background: rgba(255, 200, 0, .08); }
+.tbl tr.new td { background: rgba(35, 145, 255, .07); }
+.tbl .ck { text-align: center; }
+.banner--ok { background: rgba(47, 158, 68, .14) !important; color: #2f9e44 !important; }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; margin: 14px 0; }
+.box { border: 1px solid rgba(127,127,127,.3); border-radius: 10px; padding: 12px 14px; }
+.box h3 { margin: 0 0 8px; font-size: 14px; opacity: .75; }
+.big { font-size: 26px; font-weight: 800; }
+.inline { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.inline input, .inline select { padding: 6px 8px; border-radius: 6px; border: 1px solid rgba(127,127,127,.35);
+  background: transparent; color: inherit; font: inherit; }
+.help { font-size: 12px; opacity: .7; line-height: 1.5; margin: 6px 0 12px; }
