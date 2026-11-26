@@ -26,19 +26,37 @@
     </svg>
     <h1>Phone<em>Orchestrator</em></h1>
   </div>
-  <nav class="nav">
-    <a href="/">שרתים</a>
-    <a href="/devices.html">מכשירים</a>
-    <a href="/sms.html">SMS</a>
-    <a href="/canary.html">בדיקות</a>
-    <a href="/canary-wa.html">WA canary</a>
-    <a href="/plans.html">תוכניות</a>
-    <a href="/rentals.html" aria-current="page">השכרות</a>
-    <a href="/customers.html">לקוחות</a>
-    <a href="/unwanted.html">חסומים</a>
-    <a href="/config.html">הגדרות</a>
+  <nav class="nav" id="mainnav" aria-label="ניווט">
+    <a class="nav__top" href="/">שרתים</a>
+    <div class="nav__grp" data-current="true">
+      <button class="nav__top" type="button" aria-expanded="false">השכרה<span class="nav__car" aria-hidden="true"></span></button>
+      <div class="nav__sub">
+        <a href="/devices.html">מכשירים</a>
+        <a href="/sms.html">SMS</a>
+        <a href="/rentals.html" aria-current="page">השכרות</a>
+      </div>
+    </div>
+    <div class="nav__grp">
+      <button class="nav__top" type="button" aria-expanded="false">ניהול<span class="nav__car" aria-hidden="true"></span></button>
+      <div class="nav__sub">
+        <a href="/customers.html">לקוחות</a>
+        <a href="/unwanted.html">חסומים</a>
+        <a href="/plans.html">תוכניות</a>
+        <a href="/config.html">הגדרות</a>
+      </div>
+    </div>
+    <div class="nav__grp">
+      <button class="nav__top" type="button" aria-expanded="false">META<span class="nav__car" aria-hidden="true"></span></button>
+      <div class="nav__sub">
+        <a href="/canary.html">בדיקות</a>
+        <a href="/canary-wa.html">WA canary</a>
+      </div>
+    </div>
   </nav>
-  <button class="bar__out" id="logout">יציאה</button>
+  <div class="bar__end">
+    <button class="bar__menu" type="button" aria-controls="mainnav" aria-expanded="false" aria-label="תפריט"><span aria-hidden="true">☰</span><b>השכרות</b></button>
+    <button class="bar__out" id="logout">יציאה</button>
+  </div>
 </header>
 
 <p class="banner" id="banner" hidden></p>

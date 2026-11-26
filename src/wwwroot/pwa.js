@@ -1,4 +1,4 @@
-/* Shared by every page: service worker, mobile menu, "install app" button. */
+/* Shared by every page: service worker, menu + submenus, mobile drawer, "install app" button. */
 (() => {
   // ── service worker ──────────────────────────────────────────────────
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
@@ -8,33 +8,50 @@
   }
 
   const bar = document.querySelector('header.bar');
-  const nav = bar && bar.querySelector('.nav');
+  if (!bar) return;
+  const nav = bar.querySelector('.nav');
+  const menuBtn = bar.querySelector('.bar__menu');
+  const groups = [...bar.querySelectorAll('.nav__grp')];
+  const narrow = window.matchMedia('(max-width: 720px)');
 
-  // ── mobile menu: ☰ toggles the nav under the bar ────────────────────
-  if (nav) {
-    nav.id = nav.id || 'mainnav';
-    const btn = document.createElement('button');
-    btn.className = 'bar__menu';
-    btn.type = 'button';
-    btn.setAttribute('aria-controls', nav.id);
-    btn.setAttribute('aria-expanded', 'false');
-    btn.setAttribute('aria-label', 'תפריט');
-    const cur = nav.querySelector('[aria-current="page"]');
-    btn.innerHTML = `<span aria-hidden="true">☰</span>${cur ? `<b>${cur.textContent}</b>` : ''}`;
-    bar.querySelector('.bar__id').after(btn);
+  // ── submenus: click toggles (touch, keyboard); hover opens on desktop via CSS ──
+  const closeAll = (except) => groups.forEach((g) => {
+    if (g === except) return;
+    g.classList.remove('open');
+    g.querySelector('.nav__top').setAttribute('aria-expanded', 'false');
+  });
+  groups.forEach((g) => {
+    const top = g.querySelector('.nav__top');
+    top.addEventListener('click', (e) => {
+      if (narrow.matches) return;                 // drawer: groups are always expanded
+      e.stopPropagation();
+      const open = !g.classList.contains('open');
+      closeAll(g);
+      g.classList.toggle('open', open);
+      top.setAttribute('aria-expanded', String(open));
+    });
+    g.addEventListener('mouseleave', () => {
+      if (!narrow.matches && g.classList.contains('open') && !g.contains(document.activeElement)) closeAll();
+    });
+  });
+  document.addEventListener('click', (e) => { if (!e.target.closest('.nav__grp')) closeAll(); });
 
-    const set = (open) => { bar.classList.toggle('bar--open', open); btn.setAttribute('aria-expanded', String(open)); };
-    btn.addEventListener('click', () => set(!bar.classList.contains('bar--open')));
-    nav.addEventListener('click', (e) => { if (e.target.closest('a')) set(false); });
-    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') set(false); });
-  }
+  // ── mobile drawer ──
+  const setDrawer = (open) => {
+    bar.classList.toggle('bar--open', open);
+    menuBtn?.setAttribute('aria-expanded', String(open));
+  };
+  menuBtn?.addEventListener('click', () => setDrawer(!bar.classList.contains('bar--open')));
+  nav?.addEventListener('click', (e) => { if (e.target.closest('a')) { setDrawer(false); closeAll(); } });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { setDrawer(false); closeAll(); } });
+  narrow.addEventListener('change', () => { setDrawer(false); closeAll(); });
 
-  // ── install prompt (Chrome / Edge / Android) ────────────────────────
+  // ── install prompt (Chrome / Edge / Android) ──
   let deferred = null;
   window.addEventListener('beforeinstallprompt', (e) => {
     e.preventDefault();
     deferred = e;
-    if (!bar || bar.querySelector('.bar__install')) return;
+    if (bar.querySelector('.bar__install')) return;
     const b = document.createElement('button');
     b.className = 'bar__out bar__install';
     b.type = 'button';
@@ -46,8 +63,7 @@
       deferred = null;
       b.remove();
     });
-    const out = bar.querySelector('.bar__out');
-    out ? out.before(b) : bar.append(b);
+    (bar.querySelector('.bar__end') || bar).prepend(b);
   });
   window.addEventListener('appinstalled', () => document.querySelector('.bar__install')?.remove());
 })();
