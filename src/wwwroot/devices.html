@@ -25,7 +25,6 @@
     </svg>
     <h1>Phone<em>Orchestrator</em></h1>
   </div>
-
   <nav class="nav">
     <a href="/">שרתים</a>
     <a href="/devices.html" aria-current="page">מכשירים</a>
@@ -38,14 +37,13 @@
     <a href="/unwanted.html">חסומים</a>
     <a href="/config.html">הגדרות</a>
   </nav>
-
-  <dl class="bar__meta">
-    <div><dt>סריקה אחרונה</dt><dd id="m-scan">—</dd></div>
-    <div><dt>סביבה</dt><dd id="m-env">—</dd></div>
-    <div><dt>build</dt><dd id="m-marker">—</dd></div>
-  </dl>
   <button class="bar__out" id="logout">יציאה</button>
 </header>
+<dl class="meta" aria-label="מצב">
+  <div><dt>סריקה אחרונה</dt><dd id="m-scan">—</dd></div>
+  <div><dt>סביבה</dt><dd id="m-env">—</dd></div>
+  <div><dt>build</dt><dd id="m-marker">—</dd></div>
+</dl>
 
 <p class="banner" id="banner" hidden></p>
 <p class="banner banner--ok" id="notice" hidden></p>

@@ -545,9 +545,8 @@ body { padding-bottom: env(safe-area-inset-bottom); }
 /* row → card layout for tables marked .tbl--cards (unwanted.html) */
 .tbl td.act { text-align: end; white-space: nowrap; }
 
-@media (max-width: 1100px) {
+@media (max-width: 1180px) {
   .bar { gap: 12px; }
-  .bar__meta { order: 5; width: 100%; margin-inline-start: 0; }
   .bar__menu { display: inline-flex; }
   .nav {
     display: none; order: 4; width: 100%; margin: 0;
@@ -605,3 +604,36 @@ body { padding-bottom: env(safe-area-inset-bottom); }
   .bar__install { display: none; }
 }
 .tbl td.nw { white-space: nowrap; }
+
+/* ── header: logo · nav · (pill) · logout on one row; status moved to .meta under it ── */
+.bar { flex-wrap: nowrap; }
+.bar__id { flex: none; }
+.nav { flex: 1 1 auto; min-width: 0; margin-inline-start: 12px; flex-wrap: wrap; }
+.nav a { white-space: nowrap; }
+.bar .pill, .bar__out, .bar__install { flex: none; }
+
+/* status strip (refresh / scan / env / build) — under the header, scrolls with the page */
+.meta {
+  display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px 22px;
+  margin: 0; padding: 6px 22px;
+  border-bottom: 1px solid var(--rule); background: var(--ground);
+}
+.meta div { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+.meta dt { font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--dim); }
+.meta dd {
+  margin: 0; font-family: var(--mono); font-size: 12px; color: var(--muted); direction: ltr;
+  max-width: 16ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+@media (max-width: 1180px) {
+  .bar { flex-wrap: wrap; }
+  .nav { margin-inline-start: 0; flex: 1 1 100%; }
+}
+@media (max-width: 640px) {
+  .meta { justify-content: flex-start; padding-inline: 14px; gap: 4px 16px; }
+}
+@media (max-width: 640px) {
+  .bar .mark { display: none; }          /* logo text + ☰ + יציאה on one row */
+  .bar { gap: 8px; }
+  .bar__menu { padding: 6px 10px; }
+}
