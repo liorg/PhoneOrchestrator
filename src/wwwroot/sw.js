@@ -4,7 +4,7 @@
    /api/*, /canary/*, /health, /version are never touched (data + auth).
    Redirected / non-200 answers (e.g. → login.html) are never cached. */
 
-const VERSION = 'po-v5';
+const VERSION = 'po-v6';
 const SHELL = [
   '/offline.html', '/styles.css', '/admin.css', '/admin.js', '/pwa.js',
   '/manifest.webmanifest', '/icons/icon-192.png', '/icons/icon-512.png', '/logo2.png'

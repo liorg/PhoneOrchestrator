@@ -675,3 +675,29 @@ input[type=checkbox], input[type=radio] { width: 16px; height: 16px; cursor: poi
   .bar .pill { grid-area: pill; justify-self: start; margin-top: 8px; }
   .bar__id h1 { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 }
+
+/* ── "הורד אפליקציה" card on the home page (pwa.js shows/hides it) ── */
+.getapp {
+  display: flex; align-items: center; gap: 14px; margin-bottom: 20px;
+  background: var(--panel); border: 1px solid var(--ok); border-radius: 4px; padding: 12px 14px;
+}
+.getapp[hidden] { display: none; }
+.getapp__icon { width: 52px; height: 52px; border-radius: 12px; flex: none; }
+.getapp__txt { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.getapp__txt b { font-family: var(--mono); font-size: 13.5px; font-weight: 600; letter-spacing: .03em; }
+.getapp__txt span { font-size: 12.5px; color: var(--muted); line-height: 1.5; }
+.getapp__txt .getapp__how { color: var(--paper); }
+.getapp__go {
+  flex: none; background: rgba(79,193,166,.12); border: 1px solid var(--ok); border-radius: 2px;
+  color: var(--ok); font-family: var(--mono); font-size: 13px; letter-spacing: .04em;
+  padding: 9px 16px; cursor: pointer;
+}
+.getapp__go:hover { background: rgba(79,193,166,.22); }
+.getapp__go:focus-visible, .getapp__x:focus-visible { outline: 2px solid var(--ok); outline-offset: 2px; }
+.getapp__x { flex: none; background: transparent; border: 0; color: var(--dim); font-size: 14px; cursor: pointer; padding: 4px 6px; }
+.getapp__x:hover { color: var(--paper); }
+@media (max-width: 720px) {
+  .getapp { flex-wrap: wrap; position: relative; padding-inline-end: 34px; }
+  .getapp__go { flex: 1 1 100%; padding: 11px; }
+  .getapp__x { position: absolute; top: 8px; inset-inline-end: 6px; }
+}
