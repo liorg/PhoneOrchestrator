@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>חסומים · PhoneOrchestrator</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#0F1620">
+<link rel="icon" href="/icons/icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="admin.css">
+<script src="pwa.js" defer></script>
+</head>
+<body>
+
+<header class="bar">
+  <div class="bar__id">
+    <span class="dot" id="pulse" aria-hidden="true"></span>
+    <svg class="mark" viewBox="0 0 58 18" aria-hidden="true">
+      <path d="M1 16.5 L8 2 L15 16.5 Z" fill="#A146FF" stroke="#A146FF" stroke-width="1.5" stroke-linejoin="round"/>
+      <circle cx="29" cy="9.5" r="7.5" fill="#2391FF"/>
+      <rect x="41" y="2" width="15.5" height="15" rx="3" fill="#0FF0FF"/>
+    </svg>
+    <h1>Phone<em>Orchestrator</em></h1>
+  </div>
+  <nav class="nav">
+    <a href="/">שרתים</a>
+    <a href="/devices.html">מכשירים</a>
+    <a href="/sms.html">SMS</a>
+    <a href="/canary.html">בדיקות</a>
+    <a href="/canary-wa.html">WA canary</a>
+    <a href="/plans.html">תוכניות</a>
+    <a href="/rentals.html">השכרות</a>
+    <a href="/customers.html">לקוחות</a>
+    <a href="/unwanted.html" aria-current="page">חסומים</a>
+    <a href="/config.html">הגדרות</a>
+  </nav>
+  <button class="bar__out" id="logout">יציאה</button>
+</header>
+
+<p class="banner" id="banner" hidden></p>
+
+<main class="view" id="view-unwanted">
+  <div class="view__head">
+    <h2>מספרים חסומים (unwanted)</h2>
+    <div class="pager" id="pager"></div>
+  </div>
+  <p class="help">
+    מספר ששלח STOP או לחץ על קישור הסרה חסום לכל הלקוחות בפלטפורמה, וכל איש קשר עם המספר (או ה-LID שלו) מסומן unwanted.
+    ביטול חסימה מחזיר את אנשי הקשר כ-inactive — אפשר לחבר אותם שוב.
+  </p>
+
+  <div class="filters">
+    <button class="chip" data-status="active" aria-current="true">חסומים</button>
+    <button class="chip" data-status="revoked">בוטלו</button>
+    <button class="chip" data-status="">הכל</button>
+    <input type="search" id="q" placeholder="מספר, אימייל או UNW-…" inputmode="search">
+    <span class="hint" id="summary"></span>
+  </div>
+
+  <div id="list"><p class="empty">טוען…</p></div>
+</main>
+
+<script src="admin.js"></script>
+<script src="unwanted.js"></script>
+</body>
+</html>

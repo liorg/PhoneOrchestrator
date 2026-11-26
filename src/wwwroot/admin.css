@@ -18,3 +18,9 @@
 .inline input, .inline select { padding: 6px 8px; border-radius: 6px; border: 1px solid rgba(127,127,127,.35);
   background: transparent; color: inherit; font: inherit; }
 .help { font-size: 12px; opacity: .7; line-height: 1.5; margin: 6px 0 12px; }
+
+@media (max-width: 640px) {
+  .tbl input[type=text], .tbl input[type=number], .tbl select, .tbl textarea { font-size: 16px; } /* no iOS zoom */
+  .inline input, .inline select { flex: 1 1 100%; font-size: 16px; }
+  .big { font-size: 22px; }
+}

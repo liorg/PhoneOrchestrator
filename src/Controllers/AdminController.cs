@@ -121,6 +121,25 @@ public sealed class AdminController : ControllerBase
         CancellationToken ct = default) =>
         Rpc("rpc_admin_rentals", new { p_page = page, p_status = status, p_search = q }, ct);
 
+    // ═══════════════════════════════════════════════ opt-out (unwanted) ══
+
+    /// <summary>status: active | revoked | (empty) = all. q: number digits, customer email or UNW- ref.</summary>
+    [HttpGet("api/admin/optouts")]
+    public Task<IActionResult> Optouts(
+        [FromQuery] int page = 1, [FromQuery] string? status = "active", [FromQuery] string? q = null,
+        CancellationToken ct = default) =>
+        Rpc("rpc_admin_optouts", new { p_page = page, p_status = status ?? "", p_search = q }, ct);
+
+    public sealed record OptoutRevokeIn(string Number);
+
+    /// <summary>Unblock a number platform-wide; its contacts return as 'inactive' (optout_revoke).</summary>
+    [HttpPost("api/admin/optouts/revoke")]
+    public async Task<IActionResult> RevokeOptout([FromBody] OptoutRevokeIn body, CancellationToken ct)
+    {
+        _log.LogWarning("[ADMIN] opt-out revoked: {Number} by {Actor}", body.Number, Actor);
+        return await Rpc("rpc_admin_optout_revoke", new { p_number = body.Number, p_actor = Actor }, ct);
+    }
+
     // ═══════════════════════════════════════════════════ change history ══
 
     /// <summary>kind: plan | rent. ref: one plan id / one length, or empty for all.</summary>

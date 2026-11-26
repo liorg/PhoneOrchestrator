@@ -521,3 +521,87 @@ a.chip { text-decoration: none; display: inline-block; }
 .hostbar .gate { max-width: none; padding: 0 8px; }
 pre.raw { margin: 0; max-height: none; }
 
+
+/* ════════════════════════════════════════════════════════════════════════
+   Responsive + PWA (pwa.js adds .bar__menu and toggles .bar--open).
+   ════════════════════════════════════════════════════════════════════════ */
+
+html { -webkit-text-size-adjust: 100%; }
+body { padding-bottom: env(safe-area-inset-bottom); }
+.bar { padding-top: max(14px, env(safe-area-inset-top)); position: sticky; top: 0; z-index: 20; }
+
+.bar__menu {
+  display: none; align-items: center; gap: 8px;
+  background: transparent; border: 1px solid var(--rule); border-radius: 2px;
+  color: var(--paper); font-family: var(--mono); font-size: 13px;
+  padding: 6px 12px; cursor: pointer; margin-inline-start: auto;
+}
+.bar__menu b { font-weight: 500; color: var(--ok); }
+.bar__menu:focus-visible { outline: 2px solid var(--ok); outline-offset: 2px; }
+
+/* wide nav: 10 links don't fit next to the meta on mid screens → let it wrap */
+.nav { flex-wrap: wrap; }
+
+/* row → card layout for tables marked .tbl--cards (unwanted.html) */
+.tbl td.act { text-align: end; white-space: nowrap; }
+
+@media (max-width: 1100px) {
+  .bar { gap: 12px; }
+  .bar__meta { order: 5; width: 100%; margin-inline-start: 0; }
+  .bar__menu { display: inline-flex; }
+  .nav {
+    display: none; order: 4; width: 100%; margin: 0;
+    flex-direction: column; gap: 2px;
+    border-top: 1px solid var(--rule); padding-top: 8px;
+  }
+  .bar--open .nav { display: flex; }
+  .nav a { padding: 11px 12px; font-size: 14px; }
+}
+
+@media (max-width: 640px) {
+  html, body { font-size: 14px; }
+  .bar { padding-inline: 14px; }
+  .bar__id h1 { font-size: 13px; }
+  .bar__out { padding: 6px 10px; }
+  .bar__install { display: none; }        /* menu stays reachable; Android shows its own install too */
+  .banner { padding-inline: 14px; }
+
+  .view__head { flex-wrap: wrap; }
+  .filters { gap: 8px; }
+  .filters input[type="search"], .filters select, .filters input[type="text"] { flex: 1 1 100%; min-width: 0; font-size: 16px; }
+  .chip, .back, .pager button { padding: 8px 12px; }   /* finger-sized */
+
+  .grid2, .cards { grid-template-columns: 1fr; }
+  .gauges { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .row { flex-wrap: wrap; }
+  .row--actions { gap: 14px; }
+  .form { max-width: none; }
+  .wrap { -webkit-overflow-scrolling: touch; margin-inline: -14px; padding-inline: 14px; }
+  .tbl td.sms-body { max-width: 220px; }
+
+  /* cards */
+  .tbl--cards thead { display: none; }
+  .tbl--cards, .tbl--cards tbody, .tbl--cards tr, .tbl--cards td { display: block; width: 100%; }
+  .tbl--cards tr {
+    background: var(--panel); border: 1px solid var(--rule); border-radius: 4px;
+    padding: 10px 12px; margin-bottom: 10px;
+  }
+  .tbl--cards tr:hover td { background: transparent; }
+  .tbl--cards td {
+    border: 0; padding: 4px 0; direction: rtl; text-align: start;
+    display: flex; gap: 10px; align-items: baseline; justify-content: space-between;
+  }
+  .tbl--cards td[data-label]::before {
+    content: attr(data-label); flex: none;
+    font-size: 10px; letter-spacing: .12em; color: var(--dim);
+  }
+  .tbl--cards td.sms-body { max-width: none; white-space: normal; }
+  .tbl--cards td.act { justify-content: stretch; padding-top: 8px; }
+  .tbl--cards td.act:empty { display: none; }
+  .tbl--cards td.act .chip { width: 100%; }
+}
+
+@media (display-mode: standalone) {
+  .bar__install { display: none; }
+}
+.tbl td.nw { white-space: nowrap; }

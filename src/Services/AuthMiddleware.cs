@@ -43,7 +43,15 @@ public sealed class AuthMiddleware
         "/styles.css",
         "/logo2.png",
         "/api/auth/login",
-        "/api/auth/logout"
+        "/api/auth/logout",
+        // PWA shell: the worker installs from the login page, before there is a session.
+        // Static code/assets only - no data behind any of these.
+        "/manifest.webmanifest",
+        "/sw.js",
+        "/pwa.js",
+        "/offline.html",
+        "/admin.css",
+        "/admin.js"
     };
 
     public AuthMiddleware(
@@ -95,7 +103,8 @@ public sealed class AuthMiddleware
         // The prober's callbacks carry no credentials. CanaryController
         // checks the path token itself and answers 404 without it.
         if (Open.Any(p => path.Equals(p, StringComparison.OrdinalIgnoreCase))
-            || path.StartsWith("/canary/", StringComparison.OrdinalIgnoreCase))
+            || path.StartsWith("/canary/", StringComparison.OrdinalIgnoreCase)
+            || path.StartsWith("/icons/", StringComparison.OrdinalIgnoreCase))
         {
             await _next(ctx);
             return;

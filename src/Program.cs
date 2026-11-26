@@ -114,7 +114,19 @@ if (string.IsNullOrEmpty(builder.Configuration["Orchestrator:AuthPassword"]))
 app.UseMiddleware<AuthMiddleware>();
 
 app.UseDefaultFiles();
-app.UseStaticFiles();
+// PWA: .webmanifest is not in the default content-type map; sw.js must never be
+// HTTP-cached or a new deploy would keep running the old worker.
+var contentTypes = new Microsoft.AspNetCore.StaticFiles.FileExtensionContentTypeProvider();
+contentTypes.Mappings[".webmanifest"] = "application/manifest+json";
+app.UseStaticFiles(new StaticFileOptions
+{
+    ContentTypeProvider = contentTypes,
+    OnPrepareResponse = ctx =>
+    {
+        if (ctx.File.Name is "sw.js" or "manifest.webmanifest")
+            ctx.Context.Response.Headers.CacheControl = "no-cache";
+    }
+});
 app.MapControllers();
 
 // Liveness for Swarm.
