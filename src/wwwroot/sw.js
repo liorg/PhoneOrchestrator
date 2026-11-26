@@ -4,14 +4,26 @@
    /api/*, /canary/*, /health, /version are never touched (data + auth).
    Redirected / non-200 answers (e.g. → login.html) are never cached. */
 
-const VERSION = 'po-v3';
+const VERSION = 'po-v5';
 const SHELL = [
   '/offline.html', '/styles.css', '/admin.css', '/admin.js', '/pwa.js',
   '/manifest.webmanifest', '/icons/icon-192.png', '/icons/icon-512.png', '/logo2.png'
 ];
 
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(VERSION).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  // one file per request: a single 404 / redirect must not fail the whole install
+  // (addAll is all-or-nothing → no active worker → the browser never offers "install")
+  e.waitUntil((async () => {
+    const c = await caches.open(VERSION);
+    await Promise.all(SHELL.map(async (u) => {
+      try {
+        const res = await fetch(u, { cache: 'no-cache' });
+        if (res.ok && !res.redirected) await c.put(u, res);
+        else console.warn('[sw] skip', u, res.status);
+      } catch (err) { console.warn('[sw] skip', u, err); }
+    }));
+    await self.skipWaiting();
+  })());
 });
 
 self.addEventListener('activate', (e) => {

@@ -664,3 +664,14 @@ select option { background: var(--panel); color: var(--paper); }
 input[type=checkbox], input[type=radio] { width: 16px; height: 16px; cursor: pointer; }
 .tbl input[type=text], .tbl input[type=number], .tbl select, .tbl textarea,
 .inline input, .inline select { background: var(--ground); border-color: var(--rule); }
+
+/* ── mobile header: logo | ☰ | יציאה on row 1; page pill (AUTO-DRAIN) on its own row ── */
+@media (max-width: 720px) {
+  .bar { grid-template-columns: minmax(0, 1fr) auto auto;
+         grid-template-areas: "id menu out" "pill pill pill" "nav nav nav"; gap: 0 8px; }
+  .bar__end { display: contents; }
+  .bar__menu { grid-area: menu; }
+  #logout { grid-area: out; }
+  .bar .pill { grid-area: pill; justify-self: start; margin-top: 8px; }
+  .bar__id h1 { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+}
