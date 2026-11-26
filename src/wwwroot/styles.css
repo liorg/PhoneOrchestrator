@@ -648,3 +648,19 @@ body { padding-bottom: env(safe-area-inset-bottom); }
 }
 
 @media (display-mode: standalone) { .bar__install { display: none; } }
+
+/* ── form controls: dark everywhere (no white native inputs/spinners/pickers) ──
+   :where() = zero specificity, so page-specific input rules still win. */
+:root { color-scheme: dark; accent-color: var(--ok); }
+:where(input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=file]), select, textarea) {
+  background: var(--ground); color: var(--paper);
+  border: 1px solid var(--rule); border-radius: 2px;
+  font: inherit; font-family: var(--mono); font-size: 13px; padding: 5px 8px;
+}
+:where(input, select, textarea):focus { outline: none; border-color: var(--ok); }
+:where(input, select, textarea):disabled { opacity: .5; }
+:where(input, textarea)::placeholder { color: var(--dim); }
+select option { background: var(--panel); color: var(--paper); }
+input[type=checkbox], input[type=radio] { width: 16px; height: 16px; cursor: pointer; }
+.tbl input[type=text], .tbl input[type=number], .tbl select, .tbl textarea,
+.inline input, .inline select { background: var(--ground); border-color: var(--rule); }
